@@ -104,6 +104,7 @@ This is the phase where a single \texttt{printf("merhaba\textbackslash n")} pass
 \should & \OSC & \S2.1--2.2 \emph{Services}, \emph{User and OS Interface}; \S2.4 \emph{System Services} & 55--62, 74--75 & Where shells and utilities fit. \\
 \could & \MOS & \S1.5.6 \emph{The Shell}; \S10.2 \emph{Overview of Linux} (interfaces, shell, utility programs) & 45--46, 723--733 & The user's view of a UNIX system. \\
 \could & \MOS & \S12.2 \emph{Interface Design} & 985--993 & Keep the library and shell simple and orthogonal. \\
+\could & \LKD & Ch.~5, \emph{APIs, POSIX, and the C Library} & 70--71 & How a C library sits on top of the system calls. \\
 \end{readingplan}
 
 \begin{minixbox}
@@ -113,6 +114,8 @@ interrupt, \dots), edits the input queue, echoes, and completes a pending \code{
 in the file-system server, \texttt{servers/fs/pipe.c (25900)}: a pipe is an inode whose data blocks act as the
 buffer, and \code{suspend}/\code{release} put readers and writers to sleep and wake them, just as your wait queues
 will.
+
+\par\smallskip\textbf{Linux, for comparison.} \LKD On Linux, the C library wraps every system call and turns a negative return value into $-1$ plus \code{errno}, exactly as Turk-libc does.
 \end{minixbox}
 
 \section{Build it}

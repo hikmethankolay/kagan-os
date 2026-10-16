@@ -4,9 +4,10 @@
 \begin{document}
 \phaseheader{7}{Kernel Heap and Core Data Structures}{Give the kernel malloc and free, a reusable linked list, and an automated test run that guards everything you have built so far}{42}{48}
 
-\ataglance{1--2 weeks}{3}{Phase 6: paging, the direct map, the VMM, pre-allocated kernel page tables}{Whole-page allocation
+\ataglance{2 weeks}{3}{Phase 6: paging, the direct map, the VMM, pre-allocated kernel page tables}{Whole-page allocation
 through the direct map, a growable kernel heap with \code{kmalloc}, \code{kfree}, \code{kcalloc} and \code{krealloc}
-(first fit, splitting, coalescing, corruption checks), an intrusive doubly linked list, and \code{make test}, which
+(first fit, splitting, coalescing, corruption checks) with slab caches serving the common sizes, an intrusive doubly
+linked list, and \code{make test}, which
 boots a headless QEMU, runs every test and exits with pass or fail.}
 
 \section{Why this phase}
@@ -95,6 +96,10 @@ the port. A Makefile target turns that into an ordinary pass or fail, which you 
 \should & \OSC & \S1.9 \emph{Kernel Data Structures} & 36--40 & Lists, queues, trees, hash maps, bitmaps in kernels. \\
 \could & \MOS & \S3.2.3 \emph{Managing Free Memory} & 190--194 & First, next, best, worst and quick fit compared. \\
 \could & \MOS & \S1.8.3 \emph{Large Programming Projects} & 75--76 & Your source tree is growing; organise headers and objects now. \\
+\must & \LKD & Ch.~12, \emph{kmalloc()}, \emph{vmalloc()}, \emph{Slab Layer} & 238--251 & The design behind Task~7.8's slab caches. \\
+\should & \LKP & Ch.~8, \emph{Understanding and using the kernel slab allocator} & 411--442 & Object caching and the real \code{kmalloc} size classes. \\
+\could & \LKP & Ch.~9, \emph{Creating a custom slab cache} and \emph{Memory allocation in the kernel -- which APIs to use when} & 444--461, 477--482 & Choosing between page, slab and \code{vmalloc} allocations. \\
+\should & \LKD & Ch.~6, \emph{Linked Lists} & 85--96 & Linux's \code{list_head}, the model for your intrusive list. \\
 \end{readingplan}
 
 \begin{minixbox}
@@ -103,6 +108,8 @@ array \code{proc[NR_TASKS + NR_PROCS]} declared in \texttt{kernel/proc.h (05500)
 (06000)} holds other static tables. That makes memory use predictable and removes a whole class of allocator bugs, at
 the price of hard limits on processes, open files and so on. Turk-OS takes the other road, but you could still use
 fixed tables for some objects. Think about which one you would choose for the process table, and why.
+
+\par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux's \code{kmalloc} has no general free list. It rounds every request up to one of a set of slab caches (\code{kmalloc-8} up to a few pages), takes larger requests straight from the page allocator, and uses \code{vmalloc} for large areas that only need to be virtually contiguous. Task~7.8 takes you from your first-fit heap to the same design.
 \end{minixbox}
 
 \section{Build it}
@@ -267,10 +274,53 @@ it is full, check that the fill pattern is intact and free it. Run \code{heap_ch
 free everything and check that bytes in use is zero and that the heap is one free block again.
 \verify{The stress test passes, is deterministic for a given seed, and is part of \code{make test}.}
 
-\task{A slab cache (optional)}
-Add \code{kmem_cache_create(name, object_size)}, \code{kmem_cache_alloc} and \code{kmem_cache_free}: each cache takes
-whole pages from \code{kalloc_page} and cuts them into equal objects linked on a free list. Use it for
-\code{struct task} in Phase 8 and compare the heap statistics with and without it.
+\task{Slab caches under kmalloc}
+Your first-fit heap taught you splitting, coalescing and fragmentation, and it stays. But a kernel allocates the same
+few object sizes over and over: tasks, inodes, buffers, list nodes. Linux therefore serves almost every
+\code{kmalloc} from \textbf{slab caches} (\LKD ch.~12, \LKP ch.~8): a cache owns whole pages and cuts them into equal
+objects kept on a free list, so allocating and freeing take constant time and never fragment the heap.
+
+Add \code{kmem_cache_create(name, object_size)}, \code{kmem_cache_alloc} and \code{kmem_cache_free}. A cache takes pages
+from \code{kalloc_page} (Phase~5's buddy allocator underneath), and the page's first bytes record which cache owns it,
+so \code{kfree} can find the cache from the pointer alone. Then put \code{kmalloc} on top: requests up to 2\,KiB go to
+one of the size-class caches \code{kmalloc-32} to \code{kmalloc-2048}, larger ones to the first-fit heap, whose functions
+you rename \code{heap_alloc} and \code{heap_free}. From Phase~8
+on, give frequently allocated structures their own cache, starting with \code{struct task}.
+
+\begin{lst}{c}{kernel/mm/kmalloc.c}
+static struct kmem_cache *size_caches[7];       /* 32, 64, 128, 256, 512, 1024, 2048 */
+
+void *kmalloc(size_t size)
+{
+    if (size == 0)
+        return NULL;
+    for (int i = 0; i < 7; i++)
+        if (size <= (32u << i))
+            return kmem_cache_alloc(size_caches[i]);
+    return heap_alloc(size);                    /* the first-fit heap of Task 7.3 */
+}
+
+void kfree(void *p)
+{
+    if (!p)
+        return;
+    if (is_slab_page(p))                        /* page header written by the cache */
+        kmem_cache_free(slab_owner(p), p);
+    else
+        heap_free(p);
+}
+\end{lst}
+\verify{The Task~7.7 stress test passes unchanged, now mostly through the caches. A \code{slabinfo} monitor command
+lists each cache with its object size, pages and objects in use, and after the stress test every cache is back to zero
+objects in use.}
+
+\begin{tipbox}[One convention for errors]
+From here on, follow Linux's convention (\LKP ch.~4) everywhere: a function that can fail returns 0 on success or a
+negative error code such as \code{-ENOMEM} or \code{-EINVAL}; one that returns a pointer returns \code{NULL} only for
+``nothing'', and encodes an error as a pointer with \code{ERR_PTR(-ENOMEM)}, checked with \code{IS_ERR(p)} and
+decoded with \code{PTR_ERR(p)}. The top 4\,KiB of the address space are never valid pointers, so the encodings never
+collide. The system call layer of Phase~10 then passes the same negative codes straight to user space.
+\end{tipbox}
 
 \section{Testing and debugging}
 
@@ -295,6 +345,7 @@ Interrupt handlers should use memory allocated in advance.
   \item \code{kalloc_page}/\code{kfree_page} and \code{kmalloc}/\code{kfree}/\code{kcalloc}/\code{krealloc} work, with 16-byte alignment.
   \item Magic numbers catch double frees and bad pointers; \code{heap_check()} verifies every invariant.
   \item The 10\,000-step stress test passes, and all memory returns to the heap at the end.
+  \item \code{kmalloc} serves requests up to 2\,KiB from slab caches, and \code{slabinfo} shows every cache empty after the tests.
   \item \code{list.h} is tested and ready for the scheduler.
   \item \code{make test} runs headless and fails loudly when any test fails.
 \end{checklist}
@@ -316,8 +367,8 @@ Interrupt handlers should use memory allocated in advance.
 Add a debug mode with \textbf{red zones}: a few guard bytes with a known value after each allocation, checked on
 \code{kfree}, which pinpoints overflows. Fill freed memory with \code{0xDEADBEEF} so use-after-free shows up as
 obviously wrong values. Record the caller of every allocation with \code{__builtin_return_address(0)} and add a
-\code{leaks} command that lists live allocations by caller. Or replace first fit with segregated free lists (one list
-per size class), and measure the difference with the stress test.
+\code{leaks} command that lists live allocations by caller. Or add a \code{vmalloc} for large buffers that only need to be virtually contiguous (\LKP ch.~9), mapping single
+frames side by side in a kernel address range.
 
 \nextphase{8}{Processes, Context Switching and Scheduling}
 \booklegend

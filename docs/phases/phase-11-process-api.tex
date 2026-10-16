@@ -103,6 +103,8 @@ user mode is a real error and ends the process with \code{SIGSEGV}. Swapping is 
 \should & \OSTEP & Ch.~21--22 \emph{Beyond Physical Memory: Mechanisms}, \emph{Policies} & 227--254 & Swapping and replacement policies, for the stretch goal. \\
 \could & \MOS & \S3.4 \emph{Page Replacement Algorithms} & 209--222 & Optimal, NRU, FIFO, second chance, clock, LRU, working set. \\
 \could & \MOS & \S10.3 \emph{Processes in Linux} & 733--753 & \code{fork}, \code{clone} and \code{exec} in a production kernel. \\
+\should & \LKD & Ch.~3, \emph{Process Creation}, \emph{The Linux Implementation of Threads}, \emph{Process Termination} & 31--40 & Copy-on-write, \code{fork} and zombies as Linux does them. \\
+\should & \LKD & Ch.~15, \emph{The Process Address Space} & 305--322 & Memory descriptors and memory areas: where \code{brk} and the stack live. \\
 \end{readingplan}
 
 \begin{minixbox}
@@ -112,6 +114,8 @@ The MINIX process manager is a user-space server, and its handlers read almost l
 \texttt{servers/pm/signal.c (19500)}. Notice how \code{exec} builds the new stack with the argument strings and then
 patches the pointers in it: you will do the same in Task~11.6. One difference is fundamental: MINIX 3 has no paging,
 so its \code{fork} must copy the child's whole data segment immediately. With paging you can share and copy lazily.
+
+\par\smallskip\textbf{Linux, for comparison.} \LKD In Linux, \code{fork} is one case of \code{clone}: copy-on-write makes it cheap, and a thread is simply a task that shares its address space, files and signal handlers with its parent.
 \end{minixbox}
 
 \section{Build it}
@@ -124,9 +128,10 @@ all need to read or change the saved user registers. Put a limit on the number o
 bomb fails with \code{-EAGAIN} instead of exhausting memory.
 
 \task{Frame reference counts}
-Add a reference count per physical frame to the PMM: a \code{uint16_t} array covers the 512\,MiB direct map with
-256\,KiB. \code{pmm_ref(pa)} increments; \code{pmm_unref(pa)} decrements and frees the frame when the count reaches
-zero. From now on, freeing a user page means unreferencing it.
+Add a reference count per physical frame to the PMM: an array of \code{refcount_t} from Task~9.8 covers the
+512\,MiB direct map with 512\,KiB. \code{pmm_ref(pa)} calls \code{refcount_inc}; \code{pmm_unref(pa)} frees the frame
+when \code{refcount_dec_and_test} says it was the last reference. From now on, freeing a user page means unreferencing
+it, and a copy-on-write bug that drops one reference too many leaks a frame instead of handing it to another process.
 
 \task{fork, the simple version}
 Get \code{fork} right before making it fast. Create the child task and a new address space, and for every present

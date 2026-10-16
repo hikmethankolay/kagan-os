@@ -4,9 +4,9 @@
 \begin{document}
 \phaseheader{5}{Physical Memory Management}{Find out which RAM really exists, and hand it out and take it back in 4 KiB page frames}{28}{34}
 
-\ataglance{1--2 weeks}{3}{Phase 4: working interrupts, timer, keyboard monitor}{A parser for the Multiboot memory map,
+\ataglance{2 weeks}{3}{Phase 4: working interrupts, timer, keyboard monitor}{A parser for the Multiboot memory map,
 linker symbols that mark the kernel's start and end, a bitmap page-frame allocator with \code{pmm_alloc_frame},
-\code{pmm_free_frame} and contiguous allocation, a \code{mem} command with real numbers, and the first in-kernel
+\code{pmm_free_frame} and contiguous allocation, then a buddy allocator behind the same interface, a \code{mem} command with real numbers, and the first in-kernel
 test suite.}
 
 \section{Why this phase}
@@ -103,6 +103,8 @@ and reuses your Phase 0 bitmap code. You can add a free-list cache in front of i
 \should & \OSDI & \S4.1--4.2 \emph{Basic Memory Management}, \emph{Swapping} (bitmaps, linked lists) & 374--383 & The same ideas, with the MINIX perspective. \\
 \could & \OSC & \S9.1--9.2 \emph{Background}; \emph{Contiguous Memory Allocation} & 349--360 & Fragmentation, first/best/worst fit. \\
 \could & \OSDI & \S4.7.1 \emph{Memory Layout} (MINIX process manager) & 422--425 & How MINIX lays out memory for processes. \\
+\must & \LKD & Ch.~12, \emph{Pages}, \emph{Zones}, \emph{Getting Pages} & 231--238 & How Linux describes and hands out physical pages. \\
+\must & \LKP & Ch.~8, \emph{Understanding and using the kernel page allocator (or BSA)}: freelists and scenarios & 382--390 & The buddy allocator of Task~5.7. \\
 \end{readingplan}
 
 \begin{minixbox}
@@ -111,6 +113,8 @@ chunk of physical memory from a list of \emph{holes}. The hole list is explained
 the file that implements it, \texttt{servers/pm/alloc.c}, is described there but not included in the printed listing. That is the linked-list scheme from \MOS\,\S3.2.3 used for whole processes. Turk-OS uses
 paging instead, so it only ever needs single 4\,KiB frames, apart from the occasional contiguous DMA buffer. The
 comparison shows why paging won: no external fragmentation, and no need to move processes around.
+
+\par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux manages physical memory with a \textbf{buddy allocator}: per zone, free lists of blocks of $2^{\mathit{order}}$ pages that are split on allocation and merged with their buddy on free. A bitmap is simpler, which is why you write it first, but the buddy allocator finds contiguous blocks without a scan (Task~5.7).
 \end{minixbox}
 
 \section{Build it}
@@ -246,6 +250,44 @@ memory hole below 4\,GiB, so it exercises the memory map handling.}
 Update the monitor's \code{mem} command to print the memory map, the kernel's size, and total, used and free
 memory in MiB. You will watch these numbers constantly in later phases to spot leaks.
 
+\task{A buddy allocator behind the same interface}
+The bitmap is easy to get right, but \code{pmm_alloc_frames(n)} has to scan for a free run, and freed runs never
+come back together. Production kernels use a \textbf{buddy allocator} instead (\LKP ch.~8, \LKD ch.~12): free memory
+is kept in lists by \emph{order}, where a block of order $k$ is $2^k$ contiguous, $2^k$-aligned frames. To allocate
+order $k$, take a block from list $k$, or split a larger one in halves until it fits, putting the unused halves on
+the lower lists. To free a block, look at its \textbf{buddy}, the other half of the block it was split from, whose
+address differs in exactly one bit; if the buddy is free too, merge them and repeat one order higher.
+
+Now that the bitmap version passes all its tests, replace its inside, not its interface: keep \code{pmm.h}, and make
+\code{pmm_alloc_frames(n)} round up to the next order. Keep one byte per frame for its state (free or not, and the order
+of the block it heads); the free lists can be the intrusive lists of Phase~0, threaded through the free frames
+themselves once paging maps them, or plain arrays of frame numbers until then.
+
+\begin{lst}{c}{kernel/mm/buddy.c (core)}
+#define MAX_ORDER 10                            /* blocks of up to 2^10 frames = 4 MiB */
+
+static inline size_t buddy_of(size_t frame, unsigned order)
+{
+    return frame ^ ((size_t)1 << order);        /* flip the bit that separates the two halves */
+}
+
+void buddy_free(size_t frame, unsigned order)
+{
+    while (order < MAX_ORDER) {
+        size_t b = buddy_of(frame, order);
+        if (b >= nframes || !is_free_head(b, order))
+            break;                              /* buddy busy, or split differently */
+        list_remove_block(b, order);
+        frame &= ~((size_t)1 << order);         /* the merged block starts at the lower half */
+        order++;
+    }
+    list_add_block(frame, order);
+}
+\end{lst}
+\verify{The whole Task~5.5 suite passes unchanged on the buddy allocator. Freeing every frame you allocated leaves the
+free lists exactly as \code{pmm_init} built them, which you can check by printing the number of blocks per order (as
+Linux's \code{/proc/buddyinfo} does). Allocating 64 contiguous frames no longer takes time proportional to memory size.}
+
 \section{Testing and debugging}
 
 \begin{pitfalls}
@@ -272,6 +314,7 @@ Keep all address arithmetic in the PMM explicit about which kind of address it i
   \item \code{kernel_start} and \code{kernel_end} come from the linker script.
   \item \code{pmm_alloc_frame}, \code{pmm_free_frame} and \code{pmm_alloc_frames} work, with asserts for alignment and double frees.
   \item All six PMM tests pass from 16\,MiB to 3\,GiB of RAM.
+  \item The buddy allocator replaces the bitmap behind the same interface and passes the same tests; freeing everything restores the original free lists.
   \item The \code{test} command runs every registered test and reports the results.
 \end{checklist}
 \end{milestonebox}
@@ -289,8 +332,8 @@ Keep all address arithmetic in the PMM explicit about which kind of address it i
 
 \section{Going further}
 
-Implement a \textbf{buddy allocator} (\OSC\,\S10.8.1, \OSTEP\,\S17.4) for power-of-two runs of frames and compare it
-with your bitmap. Split memory into zones, for example frames below 16\,MiB for old DMA devices and the rest for
+Compare your bitmap and buddy allocators with a benchmark of many small and large allocations, and read
+\OSC\,\S10.8.1 and \OSTEP\,\S17.4 for the textbook view of the buddy system. Split memory into zones, for example frames below 16\,MiB for old DMA devices and the rest for
 everything else, as Linux does. Or add a small per-CPU cache of free frames in front of the bitmap, which is the
 standard way to make the common case O(1).
 

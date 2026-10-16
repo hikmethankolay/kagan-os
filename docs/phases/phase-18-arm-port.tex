@@ -305,6 +305,7 @@ descriptor it writes; forgetting to do so is the classic first bug of an AArch64
 \could & \ARMDOC & \emph{Procedure Call Standard for the Arm 64-bit Architecture} (AAPCS64) & -- & Register roles and stack alignment, for the assembly and the user ABI. \\
 \could & \MOS & \S12.3.9 \emph{Useful Techniques}: \emph{Hiding the Hardware} & 1005--1007 & Ideas for the porting chapter of Task 18.11. \\
 \could & \MOS & \S11.3.1 \emph{Operating System Structure}, the part \emph{The Hardware Abstraction Layer} & 880--882 & How Windows separates the machine from the kernel. \\
+\could & \LKP & Ch.~3, \emph{Kernel build for the Raspberry Pi} & 128--135 & Boot files and cross-building for the Pi of Task~18.12. \\
 \end{readingplan}
 
 Keep Linux's \emph{Documentation/arch/arm64/booting.rst} at hand as well: it defines the Image header and the CPU
@@ -1153,7 +1154,7 @@ boot to the \code{tsh} prompt & & & \\
 
 Then write: add a porting chapter to the Phase 15 design reflection (what leaked, what the interface looks like now,
 which port was hardest and why, what you would design differently from the start), update the architecture document
-with the AArch64 memory map and the \code{docs/porting.md} conclusions, add a 2.0 entry to the \code{CHANGELOG}, and
+with the AArch64 memory map and the \code{docs/porting.md} conclusions, and
 check that \code{make release-all} works from a clean clone. Tag the commit \code{v2.0}.
 \verify{The image passes \code{fsck.minix -f} after each of the three boots, and every architecture reads the files
 the other two wrote. \code{make test} passes for \code{ARCH=i386}, \code{riscv32} and \code{aarch64} on the tagged

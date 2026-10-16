@@ -197,6 +197,7 @@ flags, checksum) aligned to 4 bytes within the first 8\,KiB of the file.
 \should & \OSDI & \S2.6.6 \emph{Bootstrapping MINIX 3} & 156--160 & How a real x86 OS gets from the boot sector to its kernel. \\
 \could & \OSDI & \S4.6.2 \emph{Segmentation with Paging: The Intel Pentium} & 415--420 & First look at real versus protected mode addressing. \\
 \could & \OSC & \S9.6 \emph{Example: Intel 32- and 64-bit Architectures} & 379--383 & Preview of the address translation you will build in Phase 6. \\
+\could & \LKP & Ch.~3, \emph{Understanding the initramfs framework}, including the x86 boot process & 111--117 & How a real kernel uses GRUB and an initial RAM disk; compare with your Multiboot modules. \\
 \end{readingplan}
 
 Three external references matter here. The \textbf{NASM manual}, chapters 2--3, covers syntax, labels and
@@ -210,6 +211,8 @@ kernel and the system processes into memory, switch to protected mode, and jump 
 in \texttt{kernel/mpx386.s (06300)}. Skim the first page of that file now. You won't understand all of it yet, but
 you will recognise the stack setup and the jump into C (\texttt{kernel/start.c (06900)}), which is exactly what you
 build in Phase 2.
+
+\par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux on x86 does not use Multiboot: GRUB loads it with the Linux boot protocol, together with an \textbf{initramfs} that becomes a temporary root file system until the real one is mounted.
 \end{minixbox}
 
 \section{Build it}

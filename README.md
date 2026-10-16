@@ -56,10 +56,11 @@ Turk-OS is a learning project. It starts from an empty folder, basic C and no as
 utilities. Every line of kernel code is written by hand, in the order the study plan gives, and each phase ends with
 a concrete milestone that can be tested.
 
-The plan is built around five operating-system textbooks (see [Books and references](#books-and-references)). The
+The plan is built around seven operating-system books (see [Books and references](#books-and-references)). The
 practical steps follow *The little book about OS development*, the theory comes from *Operating Systems: Three Easy
 Pieces* and its companions, and every subsystem is compared with the real MINIX 3 source code printed in
-*Operating Systems: Design and Implementation*.
+*Operating Systems: Design and Implementation* and with Linux, through *Linux Kernel Development* and *Linux Kernel
+Programming*. Where the books disagree, the plan follows the newer one when its method is also better for Turk-OS.
 
 **Time budget.** About 43 weeks (roughly ten months) at 10–12 hours a week to Turk-OS 1.0, and about 15 more for
 the ports: roughly 58 weeks in all. Paging (Phase 6), processes (Phase 8), file systems (Phase 13) and the ARM MMU
@@ -85,14 +86,14 @@ The table lists what the finished system contains and which phase builds each pa
 | Area | Features | Phase |
 |---|---|---|
 | **Boot** | Multiboot 1 kernel loaded by GRUB 2 (bootable ISO from `grub-mkrescue`) or by `qemu -kernel`; kernel linked at `0xC0100000` in the higher half | 1, 6 |
-| **Console and diagnostics** | VGA text driver (colours, scrolling), 16550 serial logging, `kprintf`, `panic`, `ASSERT`, a crash report for every CPU exception with a full register dump, symbolised backtraces | 2, 3, 15 |
+| **Console and diagnostics** | VGA text driver (colours, scrolling), 16550 serial logging, `kprintf` with log levels and an in-memory log ring buffer, `panic`, `ASSERT`, a crash report for every CPU exception with a full register dump, symbolised backtraces | 2, 3, 15 |
 | **Interrupts and time** | Own GDT and IDT, 32 exception stubs, 8259 PIC remapped to vectors 32–47, 100 Hz PIT timer with uptime and `sleep_ms`, PS/2 keyboard with shift, caps lock and an optional Turkish Q layout | 3, 4 |
-| **Kernel monitor** | Built-in prompt with `help`, `clear`, `uptime`, `mem`, `crash`, `reboot`, `ps`, `test`, `lsblk`, `hexdump` | 4, 5, 8, 12 |
-| **Physical memory** | Multiboot memory map parser, bitmap page-frame allocator (single and contiguous frames), per-frame reference counts | 5, 11 |
+| **Kernel monitor** | Built-in prompt with `help`, `clear`, `uptime`, `mem`, `dmesg`, `crash`, `reboot`, `ps`, `slabinfo`, `test`, `lsblk`, `hexdump` | 4, 5, 7, 8, 12 |
+| **Physical memory** | Multiboot memory map parser, a bitmap page-frame allocator replaced by a buddy allocator behind the same interface, per-frame reference counts | 5, 11 |
 | **Virtual memory** | Two-level paging, direct map of the first 512 MiB, VMM API (`vmm_map`, `vmm_unmap`, `vmm_virt_to_phys`), page-fault reports that explain every fault | 6 |
-| **Kernel heap** | `kmalloc`, `kfree`, `kcalloc`, `krealloc` (first fit, splitting, coalescing, 16-byte alignment), magic numbers and `heap_check()`, optional slab cache | 7 |
-| **Processes** | Kernel threads with guard pages, context switch in about ten lines of assembly, preemptive round-robin scheduler (optional MLFQ), idle task, task reaping | 8 |
-| **Synchronisation** | Nesting `irq_save`/`irq_restore`, `xchg` spinlocks, wait queues without lost wake-ups, mutexes, counting semaphores, condition variables, a written lock order | 9 |
+| **Kernel heap** | `kmalloc`, `kfree`, `kcalloc`, `krealloc`: slab caches for requests up to 2 KiB, a first-fit heap (splitting, coalescing, 16-byte alignment) for larger ones, magic numbers and `heap_check()` | 7 |
+| **Processes** | Kernel threads with guard pages, context switch in about ten lines of assembly, preemptive round-robin scheduler (optional CFS-style fair scheduler), idle task, task reaping | 8 |
+| **Synchronisation** | Nesting `irq_save`/`irq_restore`, `xchg` spinlocks, wait queues without lost wake-ups, mutexes, counting semaphores, condition variables, saturating `refcount_t`, a written lock order checked at run time in debug builds | 9 |
 | **User mode** | TSS, ring 3, one page directory per process sharing the kernel half, ELF loader, `crt0`, every user pointer checked by `copy_from_user`/`copy_to_user` | 10 |
 | **UNIX process model** | `fork` with copy-on-write, `execve` with `argv`/`envp`, `waitpid`, `exit` with zombies and orphan reparenting, lazy `brk`, stacks that grow on demand, `kill`, `SIGSEGV`, `SIGINT`, `init` as PID 1 | 11 |
 | **Storage** | ATA PIO driver (polling, then interrupt-driven), block device layer, MBR partitions, RAM disk from a boot module, buffer cache with LRU replacement and write-back | 12 |
@@ -320,11 +321,11 @@ flowchart LR
 | 2 | Getting to C: screen, serial, kprintf | VGA text driver, serial logging, `kprintf`, `panic` | 1–2 | ★★☆☆☆ | 10 → 16 % | [PDF](docs/pdf/phase-02-output-drivers.pdf) |
 | 3 | Segmentation, IDT and exceptions | Own GDT and IDT; register dump on every CPU exception | 2 | ★★★★☆ | 16 → 22 % | [PDF](docs/pdf/phase-03-gdt-idt-exceptions.pdf) |
 | 4 | Hardware interrupts | PIC, 100 Hz timer, keyboard driver, kernel command monitor | 2 | ★★★☆☆ | 22 → 28 % | [PDF](docs/pdf/phase-04-hardware-interrupts.pdf) |
-| 5 | Physical memory management | Memory map parsing, bitmap page-frame allocator, first kernel tests | 1–2 | ★★★☆☆ | 28 → 34 % | [PDF](docs/pdf/phase-05-physical-memory.pdf) |
+| 5 | Physical memory management | Memory map parsing, bitmap then buddy page-frame allocator, first kernel tests | 2 | ★★★☆☆ | 28 → 34 % | [PDF](docs/pdf/phase-05-physical-memory.pdf) |
 | 6 | Paging and the higher-half kernel | Paging on, kernel at `0xC0000000`, VMM API, page-fault reports | 2–3 | ★★★★★ | 34 → 42 % | [PDF](docs/pdf/phase-06-paging-higher-half.pdf) |
-| 7 | Kernel heap and data structures | `kmalloc`/`kfree`, intrusive lists, `make test` in headless QEMU | 1–2 | ★★★☆☆ | 42 → 48 % | [PDF](docs/pdf/phase-07-kernel-heap.pdf) |
-| 8 | Processes and scheduling | Kernel threads, context switch, preemptive round-robin, sleep | 3 | ★★★★★ | 48 → 56 % | [PDF](docs/pdf/phase-08-processes-scheduling.pdf) |
-| 9 | Synchronization | Spinlocks, wait queues, mutexes, semaphores; blocking keyboard input | 2 | ★★★★☆ | 56 → 62 % | [PDF](docs/pdf/phase-09-synchronization.pdf) |
+| 7 | Kernel heap and data structures | `kmalloc`/`kfree` on slab caches, intrusive lists, `make test` in headless QEMU | 2 | ★★★☆☆ | 42 → 48 % | [PDF](docs/pdf/phase-07-kernel-heap.pdf) |
+| 8 | Processes and scheduling | Kernel threads, context switch, preemptive round-robin (optional fair scheduler), sleep | 3 | ★★★★★ | 48 → 56 % | [PDF](docs/pdf/phase-08-processes-scheduling.pdf) |
+| 9 | Synchronization | Spinlocks, wait queues, mutexes, semaphores, `refcount_t`, lock-order checking | 2 | ★★★★☆ | 56 → 62 % | [PDF](docs/pdf/phase-09-synchronization.pdf) |
 | 10 | User mode and system calls | TSS, ring 3, `int 0x80`, ELF loader, first user programs | 3 | ★★★★★ | 62 → 70 % | [PDF](docs/pdf/phase-10-user-mode-syscalls.pdf) |
 | 11 | Process API | `fork` (copy-on-write), `exec`, `wait`, `exit`, `brk`, basic signals | 3 | ★★★★★ | 70 → 77 % | [PDF](docs/pdf/phase-11-process-api.pdf) |
 | 12 | Storage | ATA PIO driver, block layer, MBR partitions, buffer cache | 2 | ★★★★☆ | 77 → 83 % | [PDF](docs/pdf/phase-12-storage-drivers.pdf) |
@@ -347,9 +348,9 @@ table and the getting-unstuck protocol.
 | B. Multiprocessor (SMP) | ACPI MADT, local and I/O APIC, starting the other CPUs, per-CPU run queues, TLB shootdown |
 | C. Networking | PCI, an e1000 or RTL8139 driver, Ethernet, ARP, IPv4, ICMP, UDP, minimal TCP, sockets |
 | D. 64-bit port | Long mode, four-level paging, Multiboot2, `syscall`/`sysret`; much easier after Stage V |
-| E. RISC-V and ARM ports | No longer a track: now Stage V, Phases 16–18 |
-| F. Microkernel experiment | The ATA driver or TurkFS as a user-space server with message passing, and its measured cost |
-| G. Virtualisation | What QEMU and KVM do, running with `-enable-kvm`, comparing benchmarks |
+| E. Microkernel experiment | The ATA driver or TurkFS as a user-space server with message passing, and its measured cost |
+| F. Virtualisation | What QEMU and KVM do, running with `-enable-kvm`, comparing benchmarks |
+| G. Loadable kernel modules | Relocatable ELF objects loaded into the running kernel, an exported symbol table, `insmod`, `rmmod` and `lsmod` |
 
 ---
 
@@ -361,7 +362,6 @@ folder has real files.
 ```text
 Turk-OS/
 ├── README.md               this file
-├── CHANGELOG.md            what changed at each milestone
 ├── LICENSE                 MIT License
 ├── Makefile                kernel build: all, run, iso, debug, clean, test, release     (Phase 1+)
 ├── link.ld                 kernel linker script, higher half from Phase 6               (Phase 1)
@@ -555,14 +555,14 @@ and committed as PDFs. See **[docs/README.md](docs/README.md)** for the full ind
 
 Every phase document has the same layout: an *at a glance* box (duration, difficulty, prerequisites, result),
 *why this phase*, *concepts you need*, a *reading plan* with printed page numbers marked **REQUIRED**,
-**RECOMMENDED** or **OPTIONAL**, a *MINIX lens* box, numbered *build it* tasks each with a **Verify** step, a
+**RECOMMENDED** or **OPTIONAL**, a *real-system lens* box (MINIX 3, plus how Linux does it), numbered *build it* tasks each with a **Verify** step, a
 debugging table, the *milestone* checklist, *self-check questions* and *going further*.
 
 The study loop, repeated in every phase:
 
 1. **Read the theory first**, usually OSTEP, then the REQUIRED items from the other books.
 2. **Read the practical chapter** in *The little book about OS development*, when there is one.
-3. **Look at a real system**: the MINIX lens box points to the matching section and source file.
+3. **Look at a real system**: the lens box points to the matching MINIX section and source file, then to Linux.
 4. **Build in small steps**: one task at a time, boot after each change, commit when it works.
 5. **Verify**: a task isn't finished until its Verify step passes.
 6. **Write it down** in the [lab journal](docs/journal.md): what you tried, what broke and why.
@@ -575,7 +575,7 @@ Never start a phase while the previous milestone is still shaky; every later pha
 ## Books and references
 
 The books are **not** part of this repository, so get your own copies before Phase 0. Two are free online from their
-authors. The other three are copyrighted textbooks: buy them from the publisher or a bookshop (a used copy is fine),
+authors. The other five are copyrighted books: buy them from the publisher or a bookshop (a used copy is fine),
 or borrow them from a library.
 
 | Code | Book | Where to get it | Role in the plan |
@@ -585,6 +585,8 @@ or borrow them from a library.
 | **OSC** | A. Silberschatz, P. B. Galvin, G. Gagne. *Operating System Concepts*, 10th ed., Wiley, 2018. ISBN 978-1-119-32091-3. | Wiley, a bookshop or a library. | Encyclopedic reference; a second explanation when an OSTEP chapter didn't click. |
 | **MOS** | Andrew S. Tanenbaum, Herbert Bos. *Modern Operating Systems*, 4th ed., Pearson, 2015. ISBN 978-0-13-359162-0. | Pearson, a bookshop or a library. | Strongest on hardware, I/O, clocks, disks, security and OS design (Ch. 12). |
 | **OSDI** | Andrew S. Tanenbaum, Albert S. Woodhull. *Operating Systems: Design and Implementation*, 3rd ed., Pearson Prentice Hall, 2006. ISBN 978-0-13-142938-3. | A bookshop (often second-hand) or a library. | MINIX 3 printed line by line: how a real x86 kernel does each step. |
+| **LKD** | Robert Love. *Linux Kernel Development*, 3rd ed., Addison-Wesley, 2010. ISBN 978-0-672-32946-3. | A bookshop or a library. | How Linux implements each subsystem: the second real-system lens, next to MINIX. |
+| **LKP** | Kaiwan N. Billimoria. *Linux Kernel Programming*, Packt, 2021. ISBN 978-1-78995-343-5. | Packt, a bookshop or a library. | The newest book: modern practice for logging, the buddy and slab allocators, the CFS scheduler and synchronisation. |
 
 Page numbers in the plan are the *printed* page numbers of these editions, not PDF page indices. With any other
 edition, find each reading by the chapter and section numbers that every reading-plan row gives. For OSTEP this is
@@ -649,17 +651,21 @@ Specifications are revised often, so the reading plans cite them by chapter and 
 **Kernel design rules**
 - Every user pointer goes through `copy_from_user`, `copy_to_user` or `strncpy_from_user`. Copy first, then check the
   copy.
-- Every shared structure has a documented lock, and locks are taken in the order written in `include/locks.h`.
+- Every shared structure has a documented lock, and locks are taken in the order written in `include/locks.h`; debug
+  builds check that order at run time.
+- Functions that can fail return 0 or a negative error code (`-ENOMEM`, `-EINVAL`); functions that return pointers
+  encode errors with `ERR_PTR`, checked with `IS_ERR` and `PTR_ERR`.
+- Shared objects (frames, open files) are counted with `refcount_t`, which saturates instead of wrapping to zero.
+- Interrupt handlers stay short: they acknowledge the device and defer the rest to a bottom half.
 - Every resource has a limit: processes (64), descriptors (32 per process), pipe buffers, path lengths.
-- Every boot step logs to the serial port.
+- Every boot step logs through `pr_info` and friends, so it reaches the serial port and the `dmesg` buffer.
 
 **Git**
 - Commit small and often, and only when the kernel boots. Small commits make `git bisect` useful.
 - Line endings are LF everywhere (enforced by [`.gitattributes`](.gitattributes)); Makefile recipe lines start with a
   real Tab.
 - Build output stays in `build/` and out of Git. The study plan PDFs in `docs/pdf/` are committed on purpose.
-- Record each finished milestone in [CHANGELOG.md](CHANGELOG.md) and tick it in the tracker below. Version 1.0 is
-  tagged `v1.0` at the end of Phase 15.
+- Tick each finished milestone in the tracker below. Version 1.0 is tagged `v1.0` at the end of Phase 15.
 
 ---
 
@@ -672,11 +678,11 @@ A phase is done only when all of its exit criteria are met.
 - [ ] **P2** — Coloured banner on screen, same log on the serial port, `kprintf` and `panic` tested.
 - [ ] **P3** — Own GDT and IDT loaded; divide-by-zero shows a register dump; `int3` returns cleanly.
 - [ ] **P4** — Timer ticks at 100 Hz; keyboard input with shift and caps; monitor commands run.
-- [ ] **P5** — Memory map printed; frame allocator passes its tests from 16 MiB to 3 GiB of RAM.
+- [ ] **P5** — Memory map printed; bitmap and then buddy allocator pass the tests from 16 MiB to 3 GiB of RAM.
 - [ ] **P6** — Kernel runs at `0xC0000000`; null dereference produces a clean page-fault report.
-- [ ] **P7** — 10 000-operation heap stress test passes; `make test` runs headless.
+- [ ] **P7** — 10 000-operation stress test passes through the slab caches; `make test` runs headless.
 - [ ] **P8** — Several kernel threads preempt each other; `sleep` works; no leaks over 1000 task cycles.
-- [ ] **P9** — Race demo fixed by locks; bounded buffer and dining philosophers run without deadlock.
+- [ ] **P9** — Race demo fixed by locks; bounded buffer and dining philosophers run without deadlock; lock order checked.
 - [ ] **P10** — Ring-3 program prints through `write`; faulty programs are killed, the kernel survives.
 - [ ] **P11** — `fork`/`exec`/`wait` chain works; copy-on-write verified; no leaks over 1000 forks.
 - [ ] **P12** — QEMU disk identified; data survives reboot; partitions detected; buffer cache in use.

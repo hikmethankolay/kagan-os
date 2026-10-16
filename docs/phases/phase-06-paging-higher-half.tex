@@ -162,6 +162,8 @@ at the price of limiting usable RAM to 512\,MiB, which is plenty for this projec
 \should & \MOS & \S3.3 \emph{Virtual Memory} (paging, page tables, speeding up paging, large memories) & 194--209 & The same ground with more hardware detail. \\
 \could & \OSDI & \S4.3 \emph{Virtual Memory} & 383--396 & Another careful walk through page tables and TLBs. \\
 \could & \OSTEP & Ch.~23 \emph{The VAX/VMS Virtual Memory System} (now \emph{Complete Virtual Memory Systems}, \S23.1) & 255--264 & A real system that also maps the kernel into every address space. \\
+\should & \LKP & Ch.~7, \emph{Understanding the VM split} and \emph{Examining the kernel segment} & 314--326, 340--361 & The same 3\,GiB/1\,GiB split you build, in a production kernel. \\
+\could & \LKP & Ch.~7, \emph{Randomizing the memory layout -- KASLR} & 362--367 & A hardening idea for Phase~15. \\
 \end{readingplan}
 
 Keep the Intel SDM Volume 3A chapter on paging open, specifically the part on 32-bit paging: it has the exact PDE
@@ -173,6 +175,8 @@ contiguous text and data segments described by its own local descriptor table, a
 limits (\OSDI\,\S4.6.2 and \S4.7.1). Later MINIX releases added paging, for the reasons \MOS\,\S3.7.3 gives for
 why x86 systems abandoned segmentation. If you want a small paging kernel to compare with, look at the MIT xv6
 source (\code{vm.c}), which uses the same direct-map approach as Turk-OS.
+
+\par\smallskip\textbf{Linux, for comparison.} \LKP 32-bit Linux on x86 uses the same 3\,GiB/1\,GiB split by default, with low memory mapped directly at \code{0xC0000000}. Modern kernels also randomise where the kernel sits (KASLR), so an attacker cannot rely on fixed addresses.
 \end{minixbox}
 
 \section{Build it}

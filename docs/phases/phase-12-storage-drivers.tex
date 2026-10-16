@@ -114,6 +114,9 @@ tasks can't hold diverging copies.
 \should & \OSC & \S12.3--12.5 \emph{Application I/O Interface}, \emph{Kernel I/O Subsystem}, \emph{Transforming I/O Requests} & 500--519 & Block versus character devices; buffering and caching in the kernel. \\
 \could & \OSTEP & Ch.~38 \emph{RAID} & 437--456 & Combining disks for speed and reliability. \\
 \could & \OSDI & \S5.6.5 \emph{The Block Cache} & 557--559 & The MINIX buffer cache, which you will meet again in Phase 13. \\
+\should & \LKD & Ch.~14, \emph{The Block I/O Layer} & 289--304 & Buffers, \code{bio}, request queues and I/O schedulers. \\
+\should & \LKD & Ch.~8, \emph{Work Queues} & 149--157 & Running disk completion work outside the interrupt handler. \\
+\could & \LKD & Ch.~16, \emph{The Page Cache and Page Writeback} & 323--336 & Why Linux folded its buffer cache into the page cache (Going further). \\
 \end{readingplan}
 
 The OSDev Wiki page \emph{ATA PIO Mode} is the practical reference for the register sequences, including the quirks
@@ -127,6 +130,8 @@ read and write requests as messages. Its \code{w_identify} does what your Task~1
 \texttt{drivers/memory/memory.c (11600)}. The block cache is part of the file-system server, in
 \texttt{servers/fs/cache.c (22400)}, with \code{get_block} and \code{put_block} playing the roles of your
 \code{bread} and \code{brelse}.
+
+\par\smallskip\textbf{Linux, for comparison.} \LKD Linux describes I/O with \code{bio} structures in request queues that an I/O scheduler reorders, completes requests in bottom halves, and long ago folded its buffer cache into the unified \textbf{page cache}. Turk-OS keeps a buffer cache because TurkFS works in blocks; the page cache is a Going-further idea.
 \end{minixbox}
 
 \section{Build it}
@@ -213,7 +218,9 @@ Polling wastes the CPU while the disk works. Enable disk interrupts (clear nIEN 
 unmask IRQ 14 on the slave PIC and IRQ 2 on the master, and register a handler for vector 46 that reads the status
 register (which acknowledges the interrupt) and calls \code{sem_up}. In \code{ata_read}, replace the busy wait before
 each sector with \code{sem_down}. Serialise requests with a mutex, since the controller can only do one thing at a
-time.
+time. This handler already follows the top-half rule of Task~4.7: it only acknowledges the device and wakes the
+waiting task, and the slow part, copying 256 words from the data port, runs in that task's context, where it may be
+preempted. Linux calls this pattern a completion (\LKD ch.~10, \emph{Completion Variables}, p.~197).
 \verify{While one task reads 10\,MiB from the disk, another task that prints once a second keeps its rhythm, and
 \code{ps} shows the reader blocked most of the time.}
 

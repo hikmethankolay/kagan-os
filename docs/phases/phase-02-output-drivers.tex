@@ -108,6 +108,7 @@ itself.
 \should & \OSDI & \S3.8.6 \emph{Implementation of the Display Driver} & 357--366 & MINIX writing to video memory and scrolling. \\
 \could & \OSC & \S12.2 \emph{I/O Hardware} & 490--500 & Another view: polling, interrupts, DMA. \\
 \could & \MOS & \S1.8 \emph{The World According to C} (if skipped in Phase 0) & 73--77 & Organising headers for a multi-file project. \\
+\must & \LKP & Ch.~4, \emph{Understanding kernel logging and printk} (ring buffer, log levels, \code{pr_*} macros, \code{pr_fmt}) & 173--194 & The logging design of Task~2.7. \\
 \end{readingplan}
 
 \begin{minixbox}
@@ -115,6 +116,8 @@ Open \texttt{drivers/tty/console.c (15900)} in \OSDI. MINIX keeps a per-console 
 the video memory address, and it scrolls either by copying memory or by moving the hardware's display start.
 Compare its \code{out_char} and \code{scroll_screen} with what you write in Task~2.5. Notice that the MINIX console
 driver runs as a separate process and receives characters in messages; in Turk-OS it is an ordinary function call.
+
+\par\smallskip\textbf{Linux, for comparison.} \LKP Linux's \code{printk} does not write to the screen directly. It appends every message, tagged with a log level, to a ring buffer in memory; console drivers drain the buffer, and \code{dmesg} reads it back long after the screen has scrolled. Task~2.7 copies that design.
 \end{minixbox}
 
 \section{Build it}
@@ -311,9 +314,34 @@ void kprintf(const char *fmt, ...)
     va_end(ap);
 }
 \end{lst}
+
+Then give every message a \textbf{log level} and keep a copy of everything in memory, the way Linux's \code{printk} does
+(\LKP ch.~4). A message goes first into a ring buffer, \code{log_buf}, and only then to the console, and only if its
+level is at least as urgent as \code{console_loglevel}. When the screen has scrolled away or no serial cable is
+attached, the buffer still holds the whole boot; in Phase~4 a \code{dmesg} monitor command prints it. Each source file
+can define \code{pr_fmt} to prefix its messages with the subsystem's name.
+
+\begin{lst}{c}{include/log.h}
+enum { LOG_ERR = 3, LOG_WARN = 4, LOG_INFO = 6, LOG_DEBUG = 7 };    /* Linux's numbers */
+extern int console_loglevel;            /* messages with level <= this reach the console */
+
+void klog(int level, const char *fmt, ...);   /* always into log_buf, maybe to the console */
+
+#ifndef pr_fmt
+#define pr_fmt(fmt) fmt                 /* e.g. #define pr_fmt(fmt) "pmm: " fmt */
+#endif
+#define pr_err(fmt, ...)   klog(LOG_ERR,   pr_fmt(fmt), ##__VA_ARGS__)
+#define pr_warn(fmt, ...)  klog(LOG_WARN,  pr_fmt(fmt), ##__VA_ARGS__)
+#define pr_info(fmt, ...)  klog(LOG_INFO,  pr_fmt(fmt), ##__VA_ARGS__)
+#define pr_debug(fmt, ...) klog(LOG_DEBUG, pr_fmt(fmt), ##__VA_ARGS__)
+\end{lst}
+Make \code{log_buf} a 16\,KiB array of characters with a write index that wraps; storing the level and the uptime in
+front of each line is a good extension once the timer exists. Keep plain \code{kprintf} for the crash paths: \code{panic}
+must print even if the log code is broken.
 \verify{Write a test that prints \code{0}, \code{-1}, \code{INT_MIN}, \code{0xFFFFFFFF} with \texttt{\%u} and \texttt{\%x},
 \texttt{\%08x} of \code{0xB8000}, a \code{NULL} string (print \code{(null)}), and \texttt{\%\%}. Compare with what the same
-format string gives in a Linux test program.}
+format string gives in a Linux test program. With \code{console_loglevel} set to \code{LOG_INFO}, a \code{pr_debug} line
+stays off the screen but is present in \code{log_buf}, and writing more than 16\,KiB of messages keeps the newest ones.}
 
 \task{panic and ASSERT}
 When the kernel detects something impossible, it must stop loudly instead of continuing with corrupt state.

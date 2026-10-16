@@ -7,7 +7,8 @@
 \ataglance{2 weeks}{4}{Phase 8: preemptive kernel threads, \code{schedule()}, sleep and wake-up}{Interrupt-safe critical
 sections, spinlocks built on the atomic \code{xchg} instruction, wait queues with lost-wakeup-free sleeping, mutexes,
 counting semaphores and condition variables, a keyboard driver that blocks instead of polling, the classic
-concurrency problems as kernel tests, and a written lock-ordering rule.}
+concurrency problems as kernel tests, a written lock-ordering rule checked at run time, and reference counts that
+cannot wrap.}
 
 \section{Why this phase}
 
@@ -113,6 +114,9 @@ kernel, it isn't).
 \should & \OSDI & \S2.2.8 \emph{Message Passing}; \S2.6.9 \emph{Interprocess Communication in MINIX 3} & 85--88, 178--182 & The alternative MINIX chose instead of kernel locks. \\
 \could & \OSTEP & Ch.~27 \emph{Thread API}; Ch.~29 \emph{Lock-based Concurrent Data Structures} & 289--300, 325--338 & Locking real data structures well. \\
 \could & \OSDI & \S3.3 \emph{Deadlocks} & 237--252 & The same theory with the I/O perspective. \\
+\must & \LKD & Ch.~9--10, \emph{An Introduction to Kernel Synchronization}, \emph{Kernel Synchronization Methods} & 161--206 & Atomics, spinlocks, semaphores, mutexes and barriers in one place. \\
+\must & \LKP & Ch.~12, \emph{Mutex or spinlock? Which to use when} and \emph{Locking and interrupts} & 605--608, 639--647 & The rule for choosing a lock, and locks shared with handlers. \\
+\must & \LKP & Ch.~13, \emph{Using the atomic\_t and refcount\_t interfaces} and \emph{Lock debugging within the kernel} & 649--657, 684--703 & Saturating reference counts and run-time lock checking (Tasks~9.8, 9.9). \\
 \end{readingplan}
 
 \begin{minixbox}
@@ -122,6 +126,8 @@ Everything else (drivers, the file system, the process manager) runs as separate
 a rendezvous with no buffering (\OSDI\,\S2.2.8 and \S2.6.9). Read \code{mini_send} and \code{mini_receive} in
 \texttt{kernel/proc.c (07400)}. Notice the check that refuses a \code{send} which would close a cycle of processes
 sending to each other: deadlock detection built into the IPC primitive itself.
+
+\par\smallskip\textbf{Linux, for comparison.} \LKP Linux checks its lock order at run time: \textbf{lockdep} records which locks are held when another is taken and reports the first order violation, long before it deadlocks. It also replaced plain atomic counters for object lifetimes with \code{refcount_t}, which saturates instead of wrapping to zero. Tasks~9.8 and 9.9 bring both ideas to Turk-OS.
 \end{minixbox}
 
 \section{Build it}
@@ -285,11 +291,83 @@ Go through every shared structure you have built and give it an owner. Write the
 task list, run queue, sleep queue & \code{sched_lock} (spinlock) & taken inside \code{schedule()}, \code{make_ready()} and the timer handler \\
 keyboard buffer & its semaphore and a spinlock & producer is the IRQ handler \\
 console and \code{kprintf} & \code{console_lock} (spinlock) & also used from interrupt context, so it must be a spinlock \\
-kernel heap & \code{heap_lock} (spinlock) & leaf lock: never call anything that takes another lock while holding it \\
-PMM bitmap & \code{pmm_lock} (spinlock) & leaf lock \\
+kernel heap and slab caches & \code{heap_lock} (spinlock) & leaf lock: never call anything that takes another lock while holding it \\
+PMM free lists & \code{pmm_lock} (spinlock) & leaf lock \\
 \bottomrule
 \end{tabularx}
 \end{center}
+
+\task{Reference counts that cannot wrap}
+Phase~11 counts how many address spaces share a frame, and Phase~13 how many descriptors share an open file. A plain
+counter is dangerous there: one missing increment or one extra decrement sends it to zero while the object is still in
+use, and the kernel frees memory that someone still writes to. Linux moved such counters from \code{atomic_t} to
+\code{refcount_t} (\LKP ch.~13), which refuses the impossible cases: incrementing a count that is already zero (the
+object is being freed) and overflowing past the maximum both trigger a warning and leave the count stuck at a
+saturation value, so the object leaks instead of being freed early. A leak is a bug; a use-after-free is a security hole.
+
+\begin{lst}{c}{include/refcount.h}
+#define REFCOUNT_SATURATED 0xC0000000u
+
+typedef struct { volatile uint32_t refs; } refcount_t;
+
+static inline void refcount_inc(refcount_t *r)
+{
+    unsigned long f = irq_save();               /* one CPU: masking interrupts is enough */
+    if (r->refs == 0 || r->refs >= REFCOUNT_SATURATED) {
+        pr_warn("refcount: inc on %u at %p\n", r->refs, r);
+        r->refs = REFCOUNT_SATURATED;           /* never free this object */
+    } else {
+        r->refs++;
+    }
+    irq_restore(f);
+}
+
+static inline bool refcount_dec_and_test(refcount_t *r)   /* true: the caller frees it */
+{
+    unsigned long f = irq_save();
+    bool last = false;
+    if (r->refs == 0)
+        pr_warn("refcount: dec below zero at %p\n", r);
+    else if (r->refs != REFCOUNT_SATURATED)
+        last = (--r->refs == 0);
+    irq_restore(f);
+    return last;
+}
+\end{lst}
+\verify{A test that increments from zero, and one that decrements an object twice, each print a warning and leave the
+count saturated; the object is never freed. The normal pattern (create at 1, share, release everywhere) frees it
+exactly once.}
+
+\task{Check the lock order at run time}
+The table above is only a promise until something checks it. Linux's \textbf{lockdep} (\LKP ch.~13) watches every
+acquisition and reports the first order violation, long before it turns into a deadlock that happens once a week.
+A much smaller version suffices for Turk-OS: give each lock a \textbf{rank} from the table, keep a small stack of the
+locks the CPU holds, and in debug builds panic when a lock is taken whose rank is not greater than the rank of the
+lock on top. Unlike lockdep, which learns the order from what it sees, yours enforces the order you wrote down.
+
+\begin{lst}{c}{kernel/sync/lockcheck.c (with LOCK_DEBUG)}
+static struct spinlock *held[16];
+static int nheld;
+
+void lockcheck_acquire(struct spinlock *l)      /* called by spin_lock and mutex_lock */
+{
+    if (nheld > 0 && l->rank <= held[nheld - 1]->rank)
+        panic("lock order: %s (rank %d) taken while holding %s (rank %d)",
+              l->name, l->rank, held[nheld - 1]->name, held[nheld - 1]->rank);
+    ASSERT(nheld < 16);
+    held[nheld++] = l;
+}
+
+void lockcheck_release(struct spinlock *l)
+{
+    ASSERT(nheld > 0 && held[nheld - 1] == l);  /* release in reverse order */
+    nheld--;
+}
+\end{lst}
+Mutexes need the same check, but their holder can sleep: keep the held-lock stack in \code{struct task} instead of a
+global array once mutexes take part.
+\verify{A test that takes \code{heap_lock} and then \code{sched_lock} panics with both names in debug builds; the whole
+\code{make test} suite runs with \code{LOCK_DEBUG} enabled and reports no violation.}
 
 \section{Testing and debugging}
 
@@ -315,7 +393,8 @@ Occasional hang under load & Two locks taken in opposite orders & Follow the loc
   \item The unlocked counter test loses updates; the locked one is exact.
   \item Bounded buffer, philosophers and ping-pong tests pass repeatedly in \code{make test}.
   \item The keyboard driver blocks the reader on a semaphore; no busy waiting remains in the kernel.
-  \item Every shared structure has a documented lock, and the lock order is written down.
+  \item Every shared structure has a documented lock, the lock order is written down, and \code{LOCK_DEBUG} builds enforce it.
+  \item \code{refcount_t} warns and saturates instead of wrapping, and the reference-count tests pass.
 \end{checklist}
 \end{milestonebox}
 

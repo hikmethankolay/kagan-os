@@ -16,7 +16,7 @@
   \node[font=\sffamily\bfseries\fontsize{26}{28}\selectfont, text=white, anchor=north west] at (0.23\linewidth,3.8cm) {Turk-OS};
   \node[font=\sffamily\bfseries\Large, text=white, anchor=north west] at (0.23\linewidth,2.65cm) {Roadmap: from zero to a working OS};
   \node[font=\sffamily\small, text=white!78!tkNavy, anchor=south west, text width=0.74\linewidth, align=left] at (0.23\linewidth,0.35cm)
-    {A 19-phase study and build plan for a UNIX-like 32-bit x86 kernel and its RISC-V and ARM ports, based on five operating-system textbooks};
+    {A 19-phase study and build plan for a UNIX-like 32-bit x86 kernel and its RISC-V and ARM ports, based on seven operating-system books};
 \end{tikzpicture}
 
 \vspace{0.4em}
@@ -56,7 +56,8 @@ The same loop works in every phase. Keep to it, because skipping the reading mak
 \begin{enumerate}
   \item \textbf{Read the theory first}, usually \OSTEP, then the \must items from the other books.
   \item \textbf{Read the practical chapter} in \LOB (when there is one) to see the concrete x86 steps.
-  \item \textbf{Look at a real system.} The MINIX lens box points to the matching \OSDI section and source file.
+  \item \textbf{Look at a real system.} The lens box points to the matching \OSDI section and MINIX source file, and
+        ends with how Linux does the same job, from \LKD and \LKP.
     In Stage V the same box looks at xv6-riscv or Linux instead.
   \item \textbf{Build in small steps.} One task at a time, boot after each change, commit when it works.
   \item \textbf{Verify.} Every task has a \emph{Verify} line. A task is not finished until you have checked it.
@@ -73,10 +74,11 @@ stuck, and in Stage V it is the traps and the virtio disk of the RISC-V port (Ph
 (Phase 18). What counts is meeting each phase's exit criteria. Never start a phase while the previous milestone is still
 shaky, because every later phase builds on top of it.
 
-\section{Your five books and how each one is used}
+\section{Your seven books and how each one is used}
 
-The five books complement each other. Only \LOB tells you what to type. The others explain why it works and show how
-real systems do it. None of them comes with this plan, so get your own copies before you start Phase 0;
+The seven books complement each other. Only \LOB tells you what to type. \OSTEP, \OSC and \MOS explain why it works;
+\OSDI shows a complete small kernel, MINIX~3; and the two Linux books, \LKD and \LKP, show how today's most widely used
+kernel does each job. None of them comes with this plan, so get your own copies before you start Phase 0;
 Section~\ref{sec:getbooks} says where.
 
 \begin{table}[htbp]
@@ -95,9 +97,13 @@ Section~\ref{sec:getbooks} says where.
   Read the hardware and I/O sections closely; they explain the devices you will program. \\
 \OSDI & Operating Systems: Design and Implementation, 3rd ed. & The only book with a complete real x86 kernel: MINIX 3, printed line by line. &
   After you understand a topic, read how MINIX implements it. Don't copy it: MINIX is a microkernel, Turk-OS is monolithic. \\
+\LKD & Linux Kernel Development, 3rd ed. & A compact tour of how Linux implements each subsystem: scheduling, interrupts and bottom halves, synchronisation, memory, the VFS, block I/O. &
+  Read the matching chapter after the theory, as the second real-system lens next to MINIX. \\
+\LKP & Linux Kernel Programming (2021) & The newest book in the plan: modern kernel practice for logging, the buddy and slab allocators, the CFS scheduler and synchronisation. &
+  Read it for practices; skip the parts about building Linux and writing loadable modules, which Turk-OS doesn't need (Track~G excepted). \\
 \bottomrule
 \end{tabularx}
-\caption{Roles of the five books.}
+\caption{Roles of the seven books.}
 \end{table}
 
 \subsection{Getting your copies}\label{sec:getbooks}
@@ -122,6 +128,10 @@ exact editions that the reading plans cite.
   Pearson, a bookshop or a library. \\
 \OSDI & Andrew S.\ Tanenbaum, Albert S.\ Woodhull. \emph{Operating Systems: Design and Implementation}, 3rd ed., Pearson Prentice Hall, 2006. ISBN 978-0-13-142938-3. &
   A bookshop (often second-hand) or a library. \\
+\LKD & Robert Love. \emph{Linux Kernel Development}, 3rd ed., Addison-Wesley, 2010. ISBN 978-0-672-32946-3. &
+  A bookshop or a library. \\
+\LKP & Kaiwan N.\ Billimoria. \emph{Linux Kernel Programming}, Packt, 2021. ISBN 978-1-78995-343-5. &
+  Packt, a bookshop or a library. \\
 \bottomrule
 \end{tabularx}
 \caption{The editions this plan cites, and where to get them.}
@@ -137,7 +147,7 @@ the same numbers in both versions, and the page range still tells you how long a
 chapter 23, \emph{The VAX/VMS Virtual Memory System}, is now \emph{Complete Virtual Memory Systems}, with VAX/VMS in \S23.1.
 \end{warnbox}
 
-\subsection{References outside the five books}
+\subsection{References outside the seven books}
 
 Books explain ideas, but writing a kernel also needs exact hardware facts. Keep these four free references at hand,
 and note that \LOB relies on them too. The \textbf{Intel 64 and IA-32 Architectures Software Developer's Manual,
@@ -159,7 +169,7 @@ gives the full titles and links.
 
 \section{Key technical decisions}
 
-These choices hold for the whole plan. The first eight follow from the five books, which keeps your reading and
+These choices hold for the whole plan. The first eight follow from the books, which keeps your reading and
 your code in step. The last five add the ports of Stage V and follow from the free specifications instead.
 
 {\small\renewcommand{\arraystretch}{1.4}
@@ -201,6 +211,19 @@ functions. In a microkernel like MINIX 3 they run as separate user-space process
 servers and a protocol for every operation before anything works. For a first kernel, plain function calls keep
 the path from idea to running code short. You will still read the MINIX code in every phase, and noticing where the
 two designs differ is one of the best ways to understand both.
+\end{decisionbox}
+
+\begin{decisionbox}{When two books disagree}
+The books were written over fifteen years, from \OSDI (2006) to \LKP (2021), and sometimes teach different ways to do
+the same job. The rule: follow the newer book's practice when it is also better for Turk-OS, and keep the older one
+when it teaches the idea more clearly or when the newer one only makes sense for a production kernel. So Turk-OS
+\textbf{adopts} printk-style log levels and a \code{dmesg} buffer (Phase~2), top and bottom halves for interrupts
+(Phase~4), the 0/\code{-E} and \code{ERR_PTR} error convention (Phase~7), saturating \code{refcount_t} counters and
+a run-time lock-order check (Phase~9). It \textbf{stages} the buddy page allocator after the bitmap (Phase~5) and
+slab caches under \code{kmalloc} after the first-fit heap (Phase~7), so you learn the simple version first. It
+offers a CFS-style \textbf{fair scheduler} instead of MLFQ as the optional scheduler (Phase~8). And it
+\textbf{keeps} the MINIX-style buffer cache rather than Linux's page cache (Phase~12), and leaves loadable modules
+to the optional Track~G, because a small monolithic kernel gains little from either.
 \end{decisionbox}
 
 \begin{decisionbox}{Why port after 1.0, and why RISC-V before ARM?}
@@ -314,11 +337,11 @@ userland and TurkFS image on three architectures (18).
 2  & Getting to C: screen, serial, kprintf & VGA text driver, serial logging, \texttt{kprintf}, \texttt{panic} & 1--2 & 10\,\%\,$\rightarrow$\,16\,\% \\
 3  & Segmentation, IDT and exceptions & Your own GDT and IDT; register dump on every CPU exception & 2 & 16\,\%\,$\rightarrow$\,22\,\% \\
 4  & Hardware interrupts & PIC, 100\,Hz timer, keyboard driver, kernel command monitor & 2 & 22\,\%\,$\rightarrow$\,28\,\% \\
-5  & Physical memory management & Memory map parsing, bitmap page-frame allocator, first kernel tests & 1--2 & 28\,\%\,$\rightarrow$\,34\,\% \\
+5  & Physical memory management & Memory map parsing, bitmap then buddy page-frame allocator, first kernel tests & 2 & 28\,\%\,$\rightarrow$\,34\,\% \\
 6  & Paging and the higher-half kernel & Paging on, kernel at \texttt{0xC0000000}, VMM API, page-fault reports & 2--3 & 34\,\%\,$\rightarrow$\,42\,\% \\
-7  & Kernel heap and data structures & \texttt{kmalloc}/\texttt{kfree}, intrusive lists, \texttt{make test} in headless QEMU & 1--2 & 42\,\%\,$\rightarrow$\,48\,\% \\
-8  & Processes and scheduling & Kernel threads, context switch, preemptive round-robin, sleep & 3 & 48\,\%\,$\rightarrow$\,56\,\% \\
-9  & Synchronization & Spinlocks, wait queues, mutexes, semaphores; blocking keyboard input & 2 & 56\,\%\,$\rightarrow$\,62\,\% \\
+7  & Kernel heap and data structures & \texttt{kmalloc}/\texttt{kfree} on slab caches, intrusive lists, \texttt{make test} in headless QEMU & 2 & 42\,\%\,$\rightarrow$\,48\,\% \\
+8  & Processes and scheduling & Kernel threads, context switch, preemptive round-robin (optional fair scheduler), sleep & 3 & 48\,\%\,$\rightarrow$\,56\,\% \\
+9  & Synchronization & Spinlocks, wait queues, mutexes, semaphores, \texttt{refcount\_t}, lock-order checking & 2 & 56\,\%\,$\rightarrow$\,62\,\% \\
 10 & User mode and system calls & TSS, ring 3, \texttt{int 0x80}, ELF loader, first user programs & 3 & 62\,\%\,$\rightarrow$\,70\,\% \\
 11 & Process API & \texttt{fork} (copy-on-write), \texttt{exec}, \texttt{wait}, \texttt{exit}, \texttt{brk}, basic signals & 3 & 70\,\%\,$\rightarrow$\,77\,\% \\
 12 & Storage & ATA PIO driver, block layer, MBR partitions, buffer cache & 2 & 77\,\%\,$\rightarrow$\,83\,\% \\
@@ -546,11 +569,11 @@ Print this page and tick each box when that phase's exit criteria are fully met.
   \item \textbf{P2}\enspace Colored banner on screen, same log on the serial port, \texttt{kprintf} and \texttt{panic} tested.
   \item \textbf{P3}\enspace Own GDT and IDT loaded; divide-by-zero shows a register dump; \texttt{int3} returns cleanly.
   \item \textbf{P4}\enspace Timer ticks at 100\,Hz; keyboard input with shift and caps; monitor commands run.
-  \item \textbf{P5}\enspace Memory map printed; frame allocator passes its tests from 16\,MiB to 3\,GiB of RAM.
+  \item \textbf{P5}\enspace Memory map printed; bitmap and then buddy allocator pass the tests from 16\,MiB to 3\,GiB of RAM.
   \item \textbf{P6}\enspace Kernel runs at \texttt{0xC0000000}; null dereference produces a clean page-fault report.
-  \item \textbf{P7}\enspace 10\,000-operation heap stress test passes; \texttt{make test} runs headless.
+  \item \textbf{P7}\enspace 10\,000-operation stress test passes through the slab caches; \texttt{make test} runs headless.
   \item \textbf{P8}\enspace Several kernel threads preempt each other; \texttt{sleep} works; no leaks over 1000 task cycles.
-  \item \textbf{P9}\enspace Race demo fixed by locks; bounded buffer and dining philosophers run without deadlock.
+  \item \textbf{P9}\enspace Race demo fixed by locks; bounded buffer and dining philosophers run without deadlock; lock order checked.
   \item \textbf{P10}\enspace Ring-3 program prints through \texttt{write}; faulty programs are killed, the kernel survives.
   \item \textbf{P11}\enspace \texttt{fork}/\texttt{exec}/\texttt{wait} chain works; copy-on-write verified; no leaks over 1000 forks.
   \item \textbf{P12}\enspace QEMU disk identified; data survives reboot; partitions detected; buffer cache in use.

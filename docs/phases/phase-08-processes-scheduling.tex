@@ -7,7 +7,7 @@
 \ataglance{3 weeks}{5}{Phase 7: \code{kmalloc}, \code{list.h}, \code{make test}; Phase 4: the timer interrupt}{Kernel threads, each
 with its own stack and guard page, a context switch in about ten lines of assembly, cooperative \code{yield}, then
 preemptive round-robin scheduling on the timer, \code{sleep_ms} with proper blocking, an idle task that halts the CPU,
-task exit with reaping, and a \code{ps} command. Optionally, a multi-level feedback queue.}
+task exit with reaping, and a \code{ps} command. Optionally, a fair scheduler in the style of Linux's CFS.}
 
 \section{Why this phase}
 
@@ -98,7 +98,9 @@ task a fixed \textbf{time slice} (quantum) in turn, which is excellent for respo
 with. Chapter 8's \textbf{multi-level feedback queue} (MLFQ) keeps several RR queues at different priorities, lowers
 the priority of tasks that use their whole slice (CPU-bound work), and periodically boosts everyone to prevent
 starvation. It favours interactive tasks without knowing anything about them in advance, which is why variants of it
-ran in most UNIX systems. \OSDI\,\S2.4.5 adds the principle to keep policy and mechanism separate, so you can change
+ran in most UNIX systems. Linux has used a third answer since 2007, the \textbf{Completely Fair Scheduler} (\LKD
+ch.~4): no queues and no boosts, just ``run the task that has had the least weighted CPU time so far''. It is fairer
+and has fewer knobs than MLFQ, which is why the optional Task~8.9 builds it instead. \OSDI\,\S2.4.5 adds the principle to keep policy and mechanism separate, so you can change
 one without touching the other.
 
 \section{Reading plan}
@@ -116,6 +118,9 @@ one without touching the other.
 \could & \OSTEP & Ch.~9 \emph{Proportional Share}; Ch.~10 \emph{Multiprocessor Scheduling} & 87--108 & Lottery and stride scheduling; what changes with more CPUs. \\
 \could & \MOS & \S2.2 \emph{Threads}, especially \S2.2.5 \emph{Implementing Threads in the Kernel} & 97--113 & What you are building, placed among the alternatives. \\
 \could & \OSC & \S5.7 \emph{Operating-System Examples} (Linux CFS, Windows) & 234--244 & How production schedulers do it. \\
+\should & \LKD & Ch.~3, \emph{Process Management} & 23--40 & The task structure, process states and kernel threads in Linux. \\
+\must & \LKD & Ch.~4, \emph{Process Scheduling} (CFS, virtual runtime, wait queues, preemption) & 41--67 & The fair scheduler of Task~8.9. \\
+\should & \LKP & Ch.~10, \emph{Learning about the CPU scheduling internals}, parts 2 and 3 & 507--528 & Scheduling classes, \code{vruntime}, and when the scheduler runs. \\
 \end{readingplan}
 
 \begin{minixbox}
@@ -126,6 +131,8 @@ whichever process was chosen. \code{enqueue}, \code{dequeue} and \code{pick_proc
 manage 16 priority queues. This works for MINIX because its kernel never blocks in the middle of a call: work that has
 to wait is done by user-space servers. Turk-OS gives every task its own kernel stack, like Linux and xv6, so a task can
 block anywhere inside the kernel (in the middle of a disk read, for example) and resume there later.
+
+\par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux's normal scheduler is CFS, the Completely Fair Scheduler: each task accumulates \textbf{virtual runtime}, weighted by its priority, and the scheduler always runs the task with the smallest one, kept in a red-black tree. Round-robin and MLFQ survive only in the real-time and historical policies. Task~8.9 builds a small CFS.
 \end{minixbox}
 
 \section{Build it}
@@ -300,11 +307,38 @@ Add a \code{ps} monitor command that walks the list of all tasks and prints PID,
 \code{spawn <name>} to start a demo task and \code{kill <pid>} to end one (for kernel threads, simply mark it to exit
 at its next tick).
 
-\task{A multi-level feedback queue (optional)}
-Replace the single run queue with three queues and apply the rules of \OSTEP chapter 8: the highest non-empty queue
-runs first; equal priorities share round-robin; new tasks start at the top; a task that uses up its allotment at a
-level moves down; every second, all tasks move back to the top. Compare a CPU-bound task and an interactive one (the
-monitor) with and without MLFQ.
+\task{A fair scheduler (optional)}
+Round-robin gives every runnable task the same slice in turn, whatever it did before; \OSTEP's MLFQ fixes that with
+hand-tuned queue rules. Linux's \textbf{Completely Fair Scheduler} (\LKD ch.~4, \LKP ch.~10) replaces both with one
+idea: each task accumulates \textbf{virtual runtime}, the CPU time it has used divided by its weight, and the
+scheduler always runs the task with the \emph{smallest} virtual runtime. A task that slept falls behind and runs soon
+after it wakes; a CPU-bound task drifts to the back; a heavier weight (a higher priority) makes time pass more slowly.
+
+Add a \code{vruntime} and a \code{weight} to \code{struct task}, charge the running task on every tick, and keep the run
+queue ordered by \code{vruntime}. Linux uses a red-black tree; with a few dozen tasks a sorted list is fine and keeps
+the scheduler short. When a task wakes, set its \code{vruntime} to at least the queue's minimum minus one slice, so a
+long sleeper cannot monopolise the CPU after waking.
+
+\begin{lst}{c}{kernel/proc/sched_fair.c}
+#define NICE_0_WEIGHT 1024
+
+void sched_tick_fair(void)                      /* from the timer, before preemption */
+{
+    current->vruntime += (uint64_t)TICK_NS * NICE_0_WEIGHT / current->weight;
+    struct task *first = runqueue_first();      /* smallest vruntime */
+    if (first && first->vruntime < current->vruntime)
+        need_resched = true;                    /* switch at the end of the interrupt */
+}
+
+void enqueue_fair(struct task *t)               /* keep the list sorted by vruntime */
+{
+    if (t->vruntime + TICK_NS < min_vruntime)
+        t->vruntime = min_vruntime - TICK_NS;   /* sleepers get a small bonus, not a fortune */
+    list_insert_sorted(&runqueue, t, by_vruntime);
+}
+\end{lst}
+\verify{Two CPU-bound tasks with equal weight each get about half the CPU in \code{ps}; give one twice the weight
+and it gets about two thirds. An interactive task (the monitor) still answers at once while both spin.}
 
 \section{Testing and debugging}
 
@@ -341,6 +375,7 @@ Queue corruption under load & \code{schedule()} entered with interrupts enabled,
   \item Draw the stack of a newly created task just before its first switch.
   \item Why must the EOI be sent before an IRQ handler that might call \code{schedule()}?
   \item Round-robin versus MLFQ: what problem does MLFQ solve, and why does it need a periodic priority boost?
+  \item How does a vruntime scheduler choose the next task, and why must a task that slept for a minute not keep its old, small vruntime?
   \item Why can't a task free its own kernel stack in \code{task_exit}?
   \item MINIX saves registers in the process table and uses a single kernel stack. What can Turk-OS do that MINIX's kernel can't, and what does it cost?
 \end{enumerate}
@@ -348,7 +383,9 @@ Queue corruption under load & \code{schedule()} entered with interrupts enabled,
 
 \section{Going further}
 
-Implement lottery or stride scheduling from \OSTEP chapter 9 and compare fairness over a long run. Add a \code{top}
+Implement the multi-level feedback queue of \OSTEP chapter 8, or lottery or stride scheduling from chapter 9, and
+compare their fairness with your vruntime scheduler over a long run. Replace the sorted run queue with a red-black
+tree, as Linux does, and measure when it starts to pay off. Add a \code{top}
 command that shows CPU usage per task over the last second. Measure the cost of a context switch by switching back and
 forth a million times and reading the CPU's time-stamp counter (\code{rdtsc}) before and after. If you are heading for
 the SMP track in Phase 15, read \OSTEP chapter 10 now and note what would have to change: one \code{current} per CPU,

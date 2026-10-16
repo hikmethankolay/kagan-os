@@ -117,6 +117,8 @@ Until Turk-OS has a file system (Phase 13), programs arrive as \textbf{Multiboot
 \could & \MOS & \S12.2 \emph{Interface Design} & 985--993 & Principles for choosing your system calls. \\
 \could & \MOS & \S9.7 \emph{Exploiting Software} & 639--657 & Why every user pointer must be checked. \\
 \could & \OSC & \S17.3 \emph{Protection Rings} & 669--671 & Rings in general, and why most OSes use only two. \\
+\must & \LKD & Ch.~5, \emph{System Calls} & 69--84 & Numbers, the handler, parameter passing and verifying user pointers. \\
+\could & \LKP & Ch.~6, \emph{Viewing the user and kernel stacks} & 281--289 & Two stacks per thread, seen on a running system. \\
 \end{readingplan}
 
 Keep the Intel SDM Volume 3A at hand for the TSS format (the task management chapter) and for the stack switch on a
@@ -130,6 +132,8 @@ kernel's only job is to deliver that message to a user-space server (the file sy
 between address spaces or writing an I/O port, it sends a \emph{kernel call} to the \textbf{system task},
 \texttt{kernel/system.c (09700)}, described in \OSDI\,\S2.7. So MINIX has two layers of calls where Turk-OS has one:
 your \code{int 0x80} goes straight to a kernel function.
+
+\par\smallskip\textbf{Linux, for comparison.} \LKD Linux on i386 enters system calls through \code{int 0x80} (or \code{sysenter}) into a table indexed by the number in \code{EAX}, and every user pointer goes through \code{copy_from_user} and \code{copy_to_user}, exactly as in Turk-OS.
 \end{minixbox}
 
 \section{Build it}

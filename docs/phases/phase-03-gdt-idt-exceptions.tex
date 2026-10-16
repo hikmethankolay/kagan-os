@@ -202,6 +202,7 @@ this layout exactly right, and matching it with a C struct, is the heart of the 
 \should & \MOS & \S5.1.5 \emph{Interrupts Revisited} & 347--351 & Precise and imprecise interrupts; what ``saved state'' means. \\
 \should & \OSDI & \S2.6.8 \emph{Interrupt Handling in MINIX 3} & 167--178 & A complete, working version of what you build here. \\
 \could & \OSC & \S1.2 \emph{Computer-System Organization} (interrupts); \S17.3 \emph{Protection Rings} & 7--15, 669--671 & Interrupt mechanics and rings in general terms. \\
+\should & \LKP & Ch.~6, \emph{Understanding process and interrupt contexts} & 268--270 & The two contexts your handlers run in, and what each may do. \\
 \end{readingplan}
 
 From the Intel SDM Volume 3A, read the parts of chapter 3 (protected-mode memory management) about segment
@@ -215,6 +216,8 @@ from a list of gate descriptions much like your \code{idt_init}. The entry stubs
 \texttt{kernel/mpx386.s (06300)}, and exceptions end up in \texttt{kernel/exception.c (08000)}. There, notice the
 decision you will make in Phase 10: an exception in a user process becomes a signal to that process (for example,
 divide error sends \code{SIGFPE}), while an exception inside the kernel is a panic.
+
+\par\smallskip\textbf{Linux, for comparison.} \LKD Linux keeps the flat model too: its GDT holds kernel and user code and data segments, the TSS and per-CPU entries, and every exception goes through the same kind of stub table into C handlers.
 \end{minixbox}
 
 \section{Build it}

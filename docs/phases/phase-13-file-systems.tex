@@ -160,6 +160,7 @@ corruption. A journal is a stretch goal.
 \should & \OSC & Ch.~13 \emph{File-System Interface}; \S14.1--14.5; \S15.5 \emph{Virtual File Systems} & 529--582, 603--605 & A thorough second treatment. \\
 \could & \OSTEP & Ch.~41 \emph{Locality and the Fast File System}; Ch.~43 \emph{Log-structured File Systems} & 495--506, 527--542 & How layout decisions affect speed. \\
 \could & \MOS & \S4.4 \emph{File-System Management and Optimization} & 299--320 & Block size, free-space tracking, consistency checks, caching. \\
+\should & \LKD & Ch.~13, \emph{The Virtual Filesystem} & 261--288 & Superblock, inode, dentry and file objects: the model for your VFS. \\
 \end{readingplan}
 
 \begin{minixbox}
@@ -169,6 +170,8 @@ in-memory inode table (\code{get_inode}, \code{put_inode}, \code{alloc_inode}) i
 lookup (\code{eat_path}, \code{advance}, \code{search_dir}) in \texttt{path.c (26300)}; file position to zone
 mapping (\code{read_map}) in \texttt{read.c (25000)}; \code{open} and \code{mkdir} in \texttt{open.c (24500)};
 descriptors in \texttt{filedes.c (23700)}. \OSDI\,\S5.6.10 traces one \code{read} call through all of it.
+
+\par\smallskip\textbf{Linux, for comparison.} \LKD Linux's VFS has four main objects: the superblock, the inode, the \textbf{dentry} (a cached path component) and the file. The dentry cache is what makes repeated path lookups fast; your VFS has the other three.
 \end{minixbox}
 
 \section{Build it}

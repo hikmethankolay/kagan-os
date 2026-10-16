@@ -38,15 +38,15 @@ Phases 0–15 (Stages I–IV) lead to Turk-OS 1.0; Stage V (Phases 16–18) port
 
 | Document | Stage | Topic | Weeks | Difficulty | Progress |
 |---|---|---|:---:|:---:|:---:|
-| [Roadmap](pdf/00-roadmap.pdf) · [source](00-roadmap.tex) | | How to use the plan, the five books and the Stage V references, technical decisions, phase map, timeline, the 1.0 and 2.0 architectures, risks, master tracker | | | |
+| [Roadmap](pdf/00-roadmap.pdf) · [source](00-roadmap.tex) | | How to use the plan, the seven books and the Stage V references, technical decisions, phase map, timeline, the 1.0 and 2.0 architectures, risks, master tracker | | | |
 | [Phase 0](pdf/phase-00-foundations.pdf) · [source](phases/phase-00-foundations.tex) | I · Bare metal | Foundations and toolchain | 2–3 | 1/5 | 0 → 5 % |
 | [Phase 1](pdf/phase-01-assembly-and-boot.pdf) · [source](phases/phase-01-assembly-and-boot.tex) | I · Bare metal | x86 assembly and the boot process | 2–3 | 3/5 | 5 → 10 % |
 | [Phase 2](pdf/phase-02-output-drivers.pdf) · [source](phases/phase-02-output-drivers.tex) | I · Bare metal | Getting to C: screen, serial and `kprintf` | 1–2 | 2/5 | 10 → 16 % |
 | [Phase 3](pdf/phase-03-gdt-idt-exceptions.pdf) · [source](phases/phase-03-gdt-idt-exceptions.tex) | I · Bare metal | Segmentation, the IDT and CPU exceptions | 2 | 4/5 | 16 → 22 % |
 | [Phase 4](pdf/phase-04-hardware-interrupts.pdf) · [source](phases/phase-04-hardware-interrupts.tex) | I · Bare metal | Hardware interrupts: PIC, timer and keyboard | 2 | 3/5 | 22 → 28 % |
-| [Phase 5](pdf/phase-05-physical-memory.pdf) · [source](phases/phase-05-physical-memory.tex) | II · Memory | Physical memory management | 1–2 | 3/5 | 28 → 34 % |
+| [Phase 5](pdf/phase-05-physical-memory.pdf) · [source](phases/phase-05-physical-memory.tex) | II · Memory | Physical memory management | 2 | 3/5 | 28 → 34 % |
 | [Phase 6](pdf/phase-06-paging-higher-half.pdf) · [source](phases/phase-06-paging-higher-half.tex) | II · Memory | Paging and the higher-half kernel | 2–3 | 5/5 | 34 → 42 % |
-| [Phase 7](pdf/phase-07-kernel-heap.pdf) · [source](phases/phase-07-kernel-heap.tex) | II · Memory | Kernel heap and core data structures | 1–2 | 3/5 | 42 → 48 % |
+| [Phase 7](pdf/phase-07-kernel-heap.pdf) · [source](phases/phase-07-kernel-heap.tex) | II · Memory | Kernel heap and core data structures | 2 | 3/5 | 42 → 48 % |
 | [Phase 8](pdf/phase-08-processes-scheduling.pdf) · [source](phases/phase-08-processes-scheduling.tex) | III · Processes | Processes, context switching and scheduling | 3 | 5/5 | 48 → 56 % |
 | [Phase 9](pdf/phase-09-synchronization.pdf) · [source](phases/phase-09-synchronization.tex) | III · Processes | Synchronization and concurrency in the kernel | 2 | 4/5 | 56 → 62 % |
 | [Phase 10](pdf/phase-10-user-mode-syscalls.pdf) · [source](phases/phase-10-user-mode-syscalls.tex) | III · Processes | User mode and system calls | 3 | 5/5 | 62 → 70 % |
@@ -73,9 +73,9 @@ optional work on top of the estimate (the tracks of Phase 15 and the hardware mi
 |---|---|
 | **0** Foundations | Install the host tools · make the editor's terminal see them · build the `i686-elf` cross compiler · create the repository skeleton · write and test the C warm-up library (`string`, `convert`, `bitmap`, `ringbuf`, `list.h`) · read your first assembly · smoke-test QEMU and GDB · start the lab journal |
 | **1** Assembly and boot | Read compiler output · write assembly that C can call (`max`, `sum_array`) · a 512-byte boot sector that prints "Merhaba, Turk-OS!" · "Hello Cafebabe": a Multiboot kernel that puts `0xCAFEBABE` in `EAX` · boot through a real GRUB ISO · a Makefile (`all`, `run`, `iso`, `debug`, `clean`) · your first kernel debugging session |
-| **2** Getting to C | Give the loader a stack and call C · compile C for the kernel · port I/O helpers · the VGA text driver · the serial driver · `kprintf` and the console layer · `panic` and `ASSERT` · read the Multiboot information |
+| **2** Getting to C | Give the loader a stack and call C · compile C for the kernel · port I/O helpers · the VGA text driver · the serial driver · `kprintf`, log levels and the console layer · `panic` and `ASSERT` · read the Multiboot information |
 | **3** GDT, IDT, exceptions | Describe the GDT in C · load it and reload the segment registers · build and load the IDT · write the interrupt stubs · the C exception handler · a handler registration API · trigger every exception you can |
-| **4** Hardware interrupts | Remap and mask the PIC · IRQ stubs and dispatch · the timer · the keyboard driver · the Turkish Q layout (optional) · line input and the kernel monitor |
+| **4** Hardware interrupts | Remap and mask the PIC · IRQ stubs and dispatch · the timer · the keyboard driver · the Turkish Q layout (optional) · line input and the kernel monitor · keep handlers short: top and bottom halves |
 
 </details>
 
@@ -84,9 +84,9 @@ optional work on top of the estimate (the tracks of Phase 15 and the hardware mi
 
 | Phase | Tasks |
 |---|---|
-| **5** Physical memory | Walk the memory map · know where the kernel ends · the bitmap allocator · a tiny test framework · test the allocator hard · a real `mem` command |
+| **5** Physical memory | Walk the memory map · know where the kernel ends · the bitmap allocator · a tiny test framework · test the allocator hard · a real `mem` command · a buddy allocator behind the same interface |
 | **6** Paging | Warm-up: identity paging from C · a page-fault handler that explains itself · move the kernel to the higher half · fix every address that assumed physical = virtual · the VMM: mapping 4 KiB pages · pre-allocate the kernel's page tables · test the fault paths deliberately |
-| **7** Kernel heap | Whole pages from the direct map · a heap region that grows · `kmalloc` and `kfree` · the rest of the API and a heap checker · an intrusive list · `make test` · stress the heap · a slab cache (optional) |
+| **7** Kernel heap | Whole pages from the direct map · a heap region that grows · `kmalloc` and `kfree` · the rest of the API and a heap checker · an intrusive list · `make test` · stress the heap · slab caches under kmalloc |
 
 </details>
 
@@ -95,8 +95,8 @@ optional work on top of the estimate (the tracks of Phase 15 and the hardware mi
 
 | Phase | Tasks |
 |---|---|
-| **8** Processes | The task structure · kernel stacks with guard pages · `switch_context` · creating a task · cooperative multitasking · preemption from the timer · sleeping, idling and exiting · `ps` and accounting · a multi-level feedback queue (optional) |
-| **9** Synchronization | Interrupt control that nests · spinlocks · wait queues without lost wake-ups · semaphores, mutexes and condition variables · a keyboard that blocks · the classic problems as tests · audit the kernel and write the lock order |
+| **8** Processes | The task structure · kernel stacks with guard pages · `switch_context` · creating a task · cooperative multitasking · preemption from the timer · sleeping, idling and exiting · `ps` and accounting · a fair scheduler (optional) |
+| **9** Synchronization | Interrupt control that nests · spinlocks · wait queues without lost wake-ups · semaphores, mutexes and condition variables · a keyboard that blocks · the classic problems as tests · audit the kernel and write the lock order · reference counts that cannot wrap · check the lock order at run time |
 | **10** User mode | Install a TSS · give every process an address space · the first jump into ring 3 · the system call gate · a user runtime · load programs as boot modules · the ELF loader · guard the door · write evil programs |
 | **11** Process API | Processes, parents and the trap frame · frame reference counts · `fork`, the simple version · copy-on-write · `exit` and `waitpid` · `execve` with arguments · `brk` and a growing stack · minimal signals · `init` and the tests |
 
@@ -138,7 +138,7 @@ Every phase document has the same sections in the same order, so you always know
 | **Why this phase** | Where the phase fits and what problem it solves |
 | **Concepts you need** | The ideas to understand *before* writing code, with diagrams. Blue *concept* boxes hold key definitions |
 | **Reading plan** | Book chapters with printed page numbers, each marked REQUIRED, RECOMMENDED or OPTIONAL, and why to read it |
-| **Real-system lens** | How MINIX 3 does the same thing, with pointers into the printed source. Stage V documents look at xv6-riscv, Linux and MINIX's ARM port instead |
+| **Real-system lens** | How MINIX 3 does the same thing, with pointers into the printed source, followed by how Linux does it (from LKD and LKP). Stage V documents look at xv6-riscv, Linux and MINIX's ARM port instead |
 | **Build it** | Numbered tasks (Task 3.4 is phase 3, task 4) with starter code. Each ends with a green **Verify** line: the task isn't finished until that check passes |
 | **Testing and debugging** | A table of symptom → likely cause → fix for the bugs this phase usually produces |
 | **Milestone** | The exit criteria as a checklist. The phase is done when every box is ticked |
@@ -153,7 +153,7 @@ Coloured boxes appear throughout:
 | Concept (blue) | A definition or idea you must understand |
 | Hint (green) | A tip, a shortcut or a way out when something fails |
 | Watch out (amber) | A common trap, or a command that can do damage |
-| Real-system lens (MINIX) | How MINIX 3 solves the same problem (or, in Stage V, xv6-riscv or Linux) |
+| Real-system lens | How MINIX 3 and Linux solve the same problem (in Stage V, xv6-riscv or Linux) |
 | Decision (navy) | A design choice and the reasoning behind it |
 | Exit criteria (red) | The milestone checklist |
 | Self-check questions | Questions to test your understanding |
@@ -173,7 +173,7 @@ Each reading plan row looks like this:
 - **OPTIONAL**: background and depth for later.
 
 The usual order within a phase is OSTEP first, then the other REQUIRED items, then the practical chapter of LOB, then
-the MINIX lens.
+the real-system lens (MINIX, then Linux through LKD and LKP).
 
 | Code | Book | Used for | Where to get it |
 |---|---|---|---|
@@ -182,6 +182,8 @@ the MINIX lens.
 | **OSC** | Silberschatz, Galvin and Gagne, *Operating System Concepts* (10th ed., Wiley, 2018) | Reference and second explanation | Buy it, or borrow it from a library |
 | **MOS** | Tanenbaum and Bos, *Modern Operating Systems* (4th ed., Pearson, 2015) | Hardware, I/O, security, OS design | Buy it, or borrow it from a library |
 | **OSDI** | Tanenbaum and Woodhull, *Operating Systems: Design and Implementation* (3rd ed., Pearson Prentice Hall, 2006) | MINIX 3 with its full source listing | Buy it (often second-hand), or borrow it from a library |
+| **LKD** | Love, *Linux Kernel Development* (3rd ed., Addison-Wesley, 2010) | How Linux implements each subsystem | Buy it, or borrow it from a library |
+| **LKP** | Billimoria, *Linux Kernel Programming* (Packt, 2021) | Modern kernel practice: logging, allocators, scheduler, locking | Buy it, or borrow it from a library |
 
 The books are not part of this repository. The ISBNs of the editions the plan cites are in the
 [main README](../README.md#books-and-references) and in the roadmap.
@@ -353,7 +355,7 @@ The commands and environments `common/turkos.sty` provides:
 | `\begin{lst}{language}{caption}` | A code listing with a file name or caption (`c`, `asm` for NASM, `rvasm` and `a64asm` for GNU as on RISC-V and AArch64, `make`, `sh`, `plain`) |
 | `\code{text}` | Inline code |
 | `readingplan`, `\must`, `\should`, `\could` | The reading plan table and its REQUIRED / RECOMMENDED / OPTIONAL markers |
-| `\LOB`, `\OSTEP`, `\OSC`, `\MOS`, `\OSDI` | Coloured book chips |
+| `\LOB`, `\OSTEP`, `\OSC`, `\MOS`, `\OSDI`, `\LKD`, `\LKP` | Coloured book chips |
 | `\XVSIX`, `\RVSPEC`, `\ARMDOC`, `\SPEC` | Chips for the Stage V references (printed as XV6, RISCV, ARM, SPEC) |
 | `pitfalls` | The symptom / cause / fix table |
 | `conceptbox{title}`, `tipbox[title]`, `warnbox[title]`, `decisionbox{title}`, `minixbox[title]` | Concept, hint, warning, decision and MINIX boxes |
@@ -364,7 +366,7 @@ The commands and environments `common/turkos.sty` provides:
 
 Colours are defined once in the style: `tkNavy`, `tkRed`, `tkBlue`, `tkGreen`, `tkAmber`, `tkGray`, `tkViolet` (the
 Stage V colour), the backgrounds `tkLight` and `tkCode`, one colour per book (`bkLOB`, `bkOSTEP`, `bkOSC`, `bkMOS`,
-`bkOSDI`) and one per Stage V reference (`bkXV`, `bkRV`, `bkARM`, `bkSPEC`). Use these names instead of new colours
+`bkOSDI`, `bkLKD`, `bkLKP`) and one per Stage V reference (`bkXV`, `bkRV`, `bkARM`, `bkSPEC`). Use these names instead of new colours
 so every document looks the same.
 
 Two LaTeX traps to avoid: `%` inside `\code{...}` starts a comment when the code sits in the

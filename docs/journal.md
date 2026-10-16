@@ -10,8 +10,8 @@ was tried, what broke and why. It gets you unstuck, and it's what you bring alon
   time. Record the evidence (serial log lines, `-d int` output, register values) instead of your memory of it.
 - **Assembly phrase book:** when you read compiler output (Phase 0, Task 0.6 and Phase 1), paste the interesting
   snippets and what each instruction does.
-- **Milestones:** when a phase's exit criteria are all met, add a short milestone entry, tick the box in the
-  [README tracker](../README.md#milestone-tracker) and add a line to the [CHANGELOG](../CHANGELOG.md).
+- **Milestones:** when a phase's exit criteria are all met, add a short milestone entry and tick the box in the
+  [README tracker](../README.md#milestone-tracker).
 - **Stuck for two sessions?** Follow the getting-unstuck protocol from the roadmap and bring this file along when you
   ask for help.
 
