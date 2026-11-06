@@ -441,6 +441,8 @@ trap_entry:                         // stvec points here (direct mode)
     sw    t2, TF_SSTATUS(sp)
     sw    t3, TF_SSTATUS + 4(sp)
     sw    t4, TF_SSTATUS + 8(sp)
+    li    t5, 1 << 18               // clear SUM: only uaccess sets it (Task 17.7);
+    csrc  sstatus, t5               //   sret restores the saved value
     mv    a0, sp
     call  trap_handler              // void trap_handler(struct trapframe *tf)
 trap_return:                        // sp = the frame to resume
@@ -471,8 +473,6 @@ void trap_handler(struct trapframe *tf)
         if ((cause & 0xff) == 5) timer_tick(); else plic_dispatch();
         return;
     }
-    if (tf_from_user(tf))
-        csr_set(sstatus, SSTATUS_SUM);              /* Task 17.7: may touch user memory */
     if (cause == 8) {                               /* ecall from U-mode (Task 17.9)  */
         tf->sepc += 4;                              /* resume after the ecall         */
         csr_set(sstatus, SSTATUS_SIE);              /* system calls can be preempted  */
@@ -617,12 +617,32 @@ pre-allocate the kernel tables as in Task~6.6. \code{arch_fault_info} takes \cod
 from cause 15, \code{exec} from 12, \code{user} from SPP, and \code{present} from a lookup. Task~11.4's copy-on-write then
 works unchanged.
 
-With \code{sstatus}.SUM clear, any S-mode access to a U page faults, \code{copy_from_user} included. Turk-OS sets SUM
-for traps from U-mode (in \code{trap.c}); the saved \code{sstatus} has it clear, so \code{sret} clears it again.
-\code{arch_signal_frame} and \code{arch_sigreturn} set it themselves.
-\verify{\code{info registers} shows the pc at \code{0xc04...}; the monitor's \code{info mem} lists \code{c0000000} with
-\code{rwx--ad}, the device pages at \code{ffc00000} and nothing below \code{0xC0000000}. Reading address 0 now gives a
-``load page fault'', and the VMM tests of Task~6.7 pass.}
+With \code{sstatus}.SUM clear, any S-mode access to a U page faults, \code{copy_from_user} included. That is the
+protection you want everywhere except inside uaccess, the RISC-V counterpart of x86's SMAP. So SUM is set only by
+\code{arch_uaccess_begin()} (\code{csrs sstatus} with bit 18) and cleared by \code{arch_uaccess_end()}
+(\code{csrc}); \code{entry.S} clears it on every trap, and \code{sret} restores the saved value, so a timer interrupt in
+the middle of a copy neither leaks SUM into another task nor loses it. \code{arch_signal_frame} and
+\code{arch_sigreturn} reach the user stack through \code{copy_to_user} and \code{copy_from_user} like every other
+caller. A stray dereference of a user pointer anywhere else in the kernel is now a load or store page fault in S-mode,
+and the crash report names it.
+
+\code{copy_to_user} still asks \code{fault_in_user_page} for write access to every page before it copies, so
+\code{ro_read} gets \code{-EFAULT} and \code{cow_read} gets its private copy before the first store. If a store page
+fault (cause 15) does arrive from inside uaccess, \code{page_fault} resolves it through the same fault-in function;
+a store fault on a user address from anywhere else in S-mode is a kernel bug and panics.
+
+Sv32 has an execute bit, so the RISC-V kernel can have what 32-bit x86 paging can't: no page both writable and
+executable. The boot table maps all of RAM read-write-execute, which is fine for the jump and no longer. When
+\code{kmain} builds the kernel's address space, replace the megapage at \code{0xC0400000} with a table of 4\,KiB
+leaves, \code{.text} R and X, \code{.rodata} R, \code{.data} and \code{.bss} R and W (symbols from \code{kernel.ld}
+mark the edges), and give every other RAM megapage R and W only. Pre-allocate that table with the others, so
+\code{arch_mmu_init_space} shares it. User pages follow \code{vm_to_pte}: only an ELF segment with \code{PF_X} gets
+\code{VM_EXEC}, so the stack, the heap and data are never executable.
+\verify{\code{info registers} shows the pc at \code{0xc04...}; the monitor's \code{info mem} lists the kernel text
+without \code{w}, the rest of RAM from \code{c0000000} without \code{x}, the device pages at \code{ffc00000} and nothing
+below \code{0xC0000000}. Reading address 0 now gives a ``load page fault'', and the VMM tests of Task~6.7 pass. A write
+to a kernel function faults (``store page fault'', \code{stval} in \code{.text}), and so does a kernel read of a user
+pointer outside uaccess.}
 
 \task{Tasks and locks}
 \code{arch_switch} is Phase 8's \code{switch_context}: save \code{ra} and \code{s0}--\code{s11} on the old stack,
@@ -702,8 +722,13 @@ number from \code{a7}: still the Linux i386 number (\code{write} is 4, not Linux
 give two new answers. \code{divzero} is \emph{not} killed (its quotient is $-1$; print it), and \code{cli} becomes
 \code{csrci sstatus, 2}, killed as an illegal instruction (2). \code{nullptr} and \code{kpeek} die of a load page fault
 (13); \code{badptr}, \code{hugelen} and \code{badsys} get \code{-EFAULT}, \code{-EFAULT} and \code{-ENOSYS} as on x86.
+The generic ones of Task~16.7, \code{ro_read}, \code{lazy_read} and \code{cow_read} among them, must give exactly the
+x86 answers, which proves that \code{SUM} and the shared fault-in path work. One more is new because RISC-V can
+enforce it: \code{nxdata} copies a \code{ret} instruction into a heap buffer and calls it, and dies of an instruction
+page fault (12), since the heap has no X bit.
 \verify{An RV32 \code{hello} prints ``Merhaba from U-mode, pid 3'' and exits, a looping program is preempted, and every
-evil program behaves as in the table in one boot.}
+evil program behaves as in the table in one boot: \code{ro_read} returns \code{-EFAULT} and the kernel carries on,
+\code{cow_read}'s data is seen only by the reader, and \code{nxdata} is killed with cause 12.}
 
 \task{A disk on virtio}
 The disk is a virtio block device (Concepts aside: a virtio device shares rings of buffer descriptions with the
@@ -763,6 +788,26 @@ fence, write 0 to \code{QueueNotify}, and sleep. The handler (PLIC source 1) ack
 the used ring and wakes the waiter. Sectors are 512 bytes. Register \code{vda} through Task~12.5's
 \code{struct blockdev}, and the buffer cache and TurkFS sit on top unchanged.
 
+The used ring is written by the device, so treat its \code{id} like any other outside input: check it against
+\code{QSIZE} before using it as an index into your request table, and log and skip an entry that is out of range. A
+virtio device can DMA anywhere in guest memory, so this is no defence against a hostile one (QEMU's devices are
+trusted, as the threat model of Task~16.10 says), but the check costs one comparison and turns a device bug into a log
+line instead of a write through a wild pointer.
+
+\begin{lst}{c}{kernel/drivers/virtio_blk.c (interrupt handler)}
+while (q->last_used != q->used->idx) {
+    __sync_synchronize();                         /* read idx before the entry */
+    uint32_t id = q->used->ring[q->last_used % QSIZE].id;
+    q->last_used++;
+    if (id >= QSIZE) {                            /* from the device: never trust it */
+        pr_err("virtio: used id %u out of range\n", (unsigned)id);
+        continue;
+    }
+    q->req[id].done = true;                       /* the request that used head id */
+    wake_up_one(&q->req[id].wq);
+}
+\end{lst}
+
 \begin{warnbox}[Physical addresses for every buffer]
 \code{V2P} is only right for direct-map addresses. A 1\,KiB buffer from the Phase 7 heap can straddle two pages
 that are not adjacent in RAM, and the device writes half of it over someone else's memory. Take buffer data from
@@ -802,12 +847,14 @@ redirection and Ctrl+C on \code{cat} behave as on x86; an i386 ELF fails \code{e
 The test device replaces \code{isa-debug-exit}: a 32-bit write of \code{0x5555} ends QEMU with status 0, and
 \code{(code << 16) | 0x3333} with status \code{code} (\code{0x7777} resets). So a pass is 0 here, not 1: set \code{TEST_PASS_STATUS := 0} in
 \code{arch.mk}, and fail with a non-zero code, since code 0 also exits with 0. \code{arch_halt} is SRST function 0 with reset type 0 (shutdown). \code{-append "test"} reaches
-\code{/chosen/bootargs}, so the test target stays generic. Fuzz for an hour (new code sits under the system call
-boundary), then run Task~15.5's benchmarks and put them beside x86 in \code{docs/porting.md}. User-space \code{rdtime}
+\code{/chosen/bootargs}, so the test target stays generic. Add \code{riscv32} to the CI matrix of Task~16.11, with the
+evil programs and a short run of the fuzzer of Phase 14. Fuzz for an hour locally as well (new code sits under the
+system call boundary), then run Task~15.5's benchmarks and put them beside x86 in \code{docs/porting.md}. User-space \code{rdtime}
 needs \code{scounteren}.TM (bit 1); one count is 100\,ns. Both machines are emulated on one host, so compare ratios, not
 absolute times.
 \verify{\code{make ARCH=riscv32 test} prints \code{ALL TESTS PASSED}, a deliberately broken test makes it fail with
-status 1, \code{make ARCH=i386 test} still passes, and an hour of fuzzing ends without a panic.}
+status 1, \code{make ARCH=i386 test} still passes, the CI matrix is green for \code{riscv32}, and an hour of fuzzing
+ends without a panic.}
 
 \task{Optional: Turk-OS on Timur-RV32IMC}
 This depends on your hardware project: start when Timur passes its own tests and runs a bare-metal program on its
@@ -852,7 +899,8 @@ With \code{-s -S}, a GDB that knows RISC-V (Task~16.1) and \code{set architectur
 OpenSBI's banner, then nothing & Linked at the wrong address, or a virtual entry point & \code{readelf -l}; the banner's \code{Domain0 Next Address} must be your entry. \\
 The banner repeats forever & A trap before \code{stvec} was set, or a call on OpenSBI's \code{sp} & Set \code{stvec} and \code{sp} first in \code{boot.S}. \\
 \code{ebreak} or \code{ecall} loops, or an instruction is skipped & \code{sepc} not advanced, or by 4 over a 2-byte \code{c.ebreak} & \code{ecall}: +4 before dispatching; \code{ebreak}: low bits \code{11} mean 4 bytes. \\
-Load page fault in \code{copy_from_user} & \code{sstatus}.SUM clear & Set SUM for traps from U-mode. \\
+Load page fault in \code{copy_from_user} & \code{sstatus}.SUM clear & Set SUM in \code{arch_uaccess_begin}, and make sure the copy runs between the two hooks. \\
+The kernel faults at \code{.text} or \code{.data} right after \code{kmain} replaces the boot megapage & A section edge from \code{kernel.ld} not page-aligned, or the new table installed before it was filled & \code{. = ALIGN(4096)} before each section; fill the table, then write the root entry and \code{sfence.vma}. \\
 Fault right after the \code{satp} write & The pc is not mapped in the new table, or no \code{sfence.vma} & Keep the identity megapages until the jump. \\
 Every first access to a page faults, on a real core & A or D clear, and the core faults instead of setting them & Set A always, D on writable leaves. \\
 PLIC interrupts never arrive & Priority 0, the wrong context, SEIE clear, or a claim never completed & Context 1; priority 1, threshold 0; always complete. \\
@@ -868,8 +916,10 @@ Corruption near \code{0x80000000} & OpenSBI's memory given out as free & Reserve
     UART interrupt.
   \item The kernel runs at \code{0xC0400000} under Sv32, and every device comes from the devicetree.
   \item Every exception gives a readable crash report, \code{ebreak} returns, and the evil programs are contained.
-  \item \code{make ARCH=riscv32 test} passes, \code{make ARCH=i386 test} still passes, and an hour of fuzzing ends
-    without a panic.
+  \item \code{sstatus}.SUM is set only inside uaccess; no kernel or user page is both writable and executable, and a
+    write to kernel text and an execute from a user data page both fault; the virtio used-ring \code{id} is checked.
+  \item \code{make ARCH=riscv32 test} passes, \code{make ARCH=i386 test} still passes, the evil programs and the
+    fuzzer pass on RV32 in CI, and an hour of fuzzing ends without a panic.
   \item A TurkFS image written by Turk-OS on RISC-V passes \code{fsck.minix -f} on the host.
   \item \code{docs/porting.md} records the board, every leak you fixed, and the benchmarks beside x86.
   \item (Optional) The Timur-RV32IMC table is filled in, and your SBI shim boots the kernel in QEMU.

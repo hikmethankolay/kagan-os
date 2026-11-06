@@ -198,9 +198,11 @@ int32_t pipe_read(struct pipe *p, uint8_t *dst, uint32_t n)
 }
 \end{lst}
 The loop copies into a kernel buffer; \code{sys_read} then hands it to the user with \code{copy_to_user} after the lock
-is released, because \code{copy_to_user} can fault and sleep.
+is released, because uaccess may fault and may allocate a frame (Phase 11), so it is never called with a spinlock
+held. That kernel buffer has a fixed size, so \code{sys_read} and \code{sys_write} on a pipe first clamp the count to
+\code{PIPE_SIZE}; a larger request returns a short count, as UNIX allows, and never overruns the buffer.
 \verify{A test program writes 1\,MiB into a pipe from a child and reads it back in the parent, checking every byte;
-the writer blocks whenever the buffer is full.}
+the writer blocks whenever the buffer is full. A single \code{read} of 1\,MiB returns at most 4096 bytes.}
 
 \task{A real terminal}
 Turn \code{/dev/tty} into a proper terminal driver. Keyboard characters go into an input queue. In canonical mode, echo
@@ -210,7 +212,9 @@ sends \code{SIGINT} to the foreground process group and discards the line. Add a
 can read and set a flags word (canonical on or off, echo on or off) and set the foreground process group, which the
 shell does before running a job and after it finishes. On the output side, teach the console the few ANSI sequences
 programs need: \code{ESC [2J} (clear), \code{ESC [H} and \code{ESC [row;colH} (move the cursor), \code{ESC [K} (clear to
-end of line) and \code{ESC [...m} (colours).
+end of line) and \code{ESC [...m} (colours). The input queue holds one line of \code{MAX_CANON} (256) bytes: further
+characters are dropped with a beep, and \code{read} and \code{write} on the terminal clamp the count to the size of
+the kernel buffer they copy through, exactly as the pipe does.
 \verify{A program that reads lines and prints them in capitals works like a normal UNIX filter: editing works, Ctrl+D
 ends it, Ctrl+C interrupts it.}
 
@@ -275,9 +279,14 @@ system & \code{uptime}, \code{clear} (ANSI escape), \code{sync}, \code{shutdown}
 \task{Boot into the shell}
 Make \code{init} open \code{/dev/tty} for descriptors 0--2, print a banner, start \code{tsh}, and start a new one
 whenever it exits, while still reaping orphans. Keep the old kernel monitor reachable for emergencies, for example on
-the serial port or with a \code{monitor} boot option. Code page 437 has no ş, so a banner like ``Turk-OS 1.0 -- Hos
+the serial port or with a \code{monitor} boot option, but only in debug and test builds: compile its files only when
+the Makefile defines \code{CONFIG_MONITOR}, which the normal and test builds do and the release build of Phase 15
+does not. A command interpreter inside the kernel, with \code{crash} and \code{reboot}, has no place on a system that
+other people use. Code page 437 has no ş, so a banner like ``Turk-OS 1.0 -- Hos
 geldiniz!'' stays ASCII until Phase 15.
-\verify{Turk-OS boots straight to \code{turk@os:/$}, and typing \code{exit} brings back a fresh shell.}
+\verify{Turk-OS boots straight to \code{turk@os:/$}, and typing \code{exit} brings back a fresh shell. A kernel built
+without \code{CONFIG_MONITOR} has no monitor symbols: \code{i686-elf-nm build/kernel.elf | grep monitor} prints
+nothing.}
 
 \task{Test the userland}
 Add a \code{-c} option to \code{tsh} (run one command line and exit) and a test runner that executes a list of command
@@ -297,6 +306,34 @@ lines and compares their output with expected text. Put these cases in \code{mak
 \bottomrule
 \end{tabularx}
 \end{center}
+
+\task{Limits, and the fuzzer again}
+Every resource a process can ask for needs a fixed upper bound, or one process can take all of it. Collect the limits
+in \code{include/limits.h}, which the kernel and Turk-libc share, check each one where the resource is taken, and
+copy the table into your notes.
+
+\begin{center}
+\small\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+\tkth{Limit} & \tkth{Value} & \tkth{When it is exceeded} \\
+\midrule
+\code{OPEN_MAX}, open files per process & 64 & \code{open}, \code{dup} and \code{pipe} return \code{-EMFILE} \\
+\code{CHILD_MAX}, processes per user & 64 & \code{fork} returns \code{-EAGAIN}; one user until Phase 15 \\
+\code{PIPE_SIZE}, pipe buffer & 4096 & \code{read} and \code{write} return a short count \\
+\code{MAX_CANON}, terminal line & 256 & extra characters are dropped \\
+\code{PATH_MAX}, path length & 256 & \code{-ENAMETOOLONG} \\
+\code{ARG_MAX}, \code{argv} and \code{envp} for \code{execve} & 32\,KiB & \code{-E2BIG} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Then extend \code{user/bin/fuzz} once more: create pipes and close random ends, read and write pipes with huge counts,
+call \code{ioctl} 54 on the terminal and on other descriptors with random requests and arguments, and \code{dup2} onto
+random descriptors. Run it in the nightly CI job together with the file calls from Phase 13.
+\verify{Once a process holds 64 descriptors, counting 0--2, the next \code{open} returns \code{-EMFILE}; \code{fork} beyond \code{CHILD_MAX} returns
+\code{-EAGAIN}; a path of 300 characters gives \code{-ENAMETOOLONG}; \code{fuzz} runs for 10 minutes without a kernel
+panic.}
 
 \section{Testing and debugging}
 
@@ -318,6 +355,8 @@ Arguments arrive garbled in \code{main} & Wrong \code{argv} layout on the initia
   \item Turk-OS boots to a \code{tsh} prompt; pipelines, redirection, background jobs and Ctrl+C work.
   \item The core utilities are present and pass the scripted tests.
   \item No zombies remain after a long interactive session.
+  \item Every limit in the limits table is enforced; pipe and terminal reads and writes clamp the count to the kernel buffer size.
+  \item \code{fuzz} covers pipes and terminal calls; the kernel monitor is compiled only into debug and test builds.
 \end{checklist}
 \end{milestonebox}
 

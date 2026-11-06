@@ -90,10 +90,13 @@ kernel is mapped in every address space, user code can't touch it.
 
 When a program calls \code{write(1, buf, len)}, \code{buf} is just a number the program chose. It could point into
 the kernel (to trick the kernel into printing a secret), be unmapped (to crash the kernel), or wrap around the end of
-the address space. Every user pointer must be checked before use: the whole range lies below \code{0xC0000000},
-doesn't overflow, and every page in it is present and user-accessible. \code{copy_from_user} and
-\code{copy_to_user} do those checks and return \code{-EFAULT} instead of faulting. \MOS\,\S9.7 shows what happens
-to kernels that skip this.
+the address space. The kernel has rights the program lacks, and a program that gets the kernel to use those rights on
+its behalf has turned it into a \textbf{confused deputy}. Every user pointer must be checked before use: the whole
+range lies below \code{0xC0000000}, doesn't overflow, and every page in it is present and user-accessible, and also
+writable when the kernel writes to it. \code{copy_from_user} and \code{copy_to_user} do those checks and return
+\code{-EFAULT} instead of faulting. Check once and read once: if the kernel checks a value in user memory and then
+reads it again to use it, the program can change it in between (a \textbf{double fetch}), so the kernel copies user
+data in, then checks and uses only its copy. \MOS\,\S9.7 shows what happens to kernels that skip this.
 
 \subsection{Loading a program}
 
@@ -291,11 +294,22 @@ In the kernel, walk \code{mods_count} and \code{mods_addr} (through \code{P2V}),
 did that in Phase 5), and keep a table of name, start and end for the loader.
 
 \task{The ELF loader}
-Write \code{elf_load(pgdir, image, size, &entry)}. Validate before trusting anything: the magic bytes
-\code{7F 45 4C 46}, 32-bit class, little-endian, type \code{ET_EXEC} (2), machine \code{EM_386} (3), and program
-headers that lie inside the file. For each \code{PT_LOAD}, check that the segment lies entirely below
-\code{0xC0000000} without overflow, allocate and map user pages (writable only if the segment's flags say so), copy
-\code{p_filesz} bytes through the direct map, and zero the rest up to \code{p_memsz}. Then map a user stack below
+Write \code{elf_load(pgdir, image, size, &entry)}. The image comes from outside the kernel, so validate everything
+before trusting anything, in a separate function \code{elf_check} that only reads the bytes. The header needs the
+magic bytes \code{7F 45 4C 46}, 32-bit class, little-endian, type \code{ET_EXEC} (2), machine \code{EM_386} (3),
+\code{e_phentsize} equal to the size of \code{struct elf32_phdr}, and between 1 and 16 program headers that lie inside
+the file. Each \code{PT_LOAD} header must then pass five checks, with every sum checked for overflow. Its file bytes,
+\code{p_offset} plus \code{p_filesz}, lie inside the image; otherwise the copy reads past it. \code{p_filesz} is at
+most \code{p_memsz}; otherwise the copy writes past the frames you allocated for \code{p_memsz}. \code{p_vaddr} is at
+least \code{USER_BASE} (\code{0x00400000}, where your programs are linked). \code{p_vaddr} plus \code{p_memsz} is at
+most \code{0xC0000000}. The segments come in address order and never share a page. Last, the entry point must lie
+inside an executable segment. The minimum address matters more than it looks: a program that maps page~0 turns every
+kernel \code{NULL} dereference into a read of memory it controls, and on a CPU without SMEP even into running its code.
+
+Only then does \code{elf_load} allocate and map user pages (writable only if the segment's flags say so), copy
+\code{p_filesz} bytes through the direct map, and zero the rest up to \code{p_memsz}. Take every frame that goes to
+user space from \code{kalloc_page}, which zeroes it (Phase~7), so no process ever sees what an earlier one left in
+a frame, not even in the bytes after \code{p_filesz} in a segment's last page. Then map a user stack below
 \code{0xC0000000}, create a task that runs \code{enter_user_mode(entry, stack_top)}, and make it ready.
 
 \begin{lst}{c}{include/elf.h}
@@ -313,33 +327,137 @@ struct elf32_phdr {
     uint32_t p_flags, p_align;      /* flags: 1 = X, 2 = W, 4 = R    */
 } __attribute__((packed));
 \end{lst}
-\verify{A \code{hello} program prints ``Merhaba from ring 3, pid 3'' through \code{write}, then exits, and its pages go
-back to the PMM (free count restored).}
 
-\task{Guard the door}
-Write \code{copy_from_user}, \code{copy_to_user} and \code{strncpy_from_user}, and route every system call argument
-that is a pointer through them. \code{sys_write} copies the user buffer in chunks into a kernel buffer before printing.
-Then make exceptions depend on who caused them: if \code{(r->cs & 3) == 3}, the fault came from user mode, so print
-something like ``hello (pid 3): segmentation fault at 0x00000000'' and kill that task; only faults in ring 0 still
-panic.
+\begin{lst}{c}{kernel/exec/elf_check.c}
+#define USER_BASE 0x00400000u       /* nothing below: page 0 is never mapped */
+#define MAX_PHNUM 16
 
-\begin{lst}{c}{kernel/syscall/uaccess.c}
-int copy_from_user(void *dst, const void *usrc, size_t n)
+/* Reads only the bytes it is given: no allocation, no mapping, so it builds on the host too. */
+int elf_check(const uint8_t *image, size_t size, uint32_t *entry)
 {
-    uintptr_t start = (uintptr_t)usrc, end = start + n;
-    if (end < start || end > KERNEL_VMA)                /* wraps around, or reaches the kernel */
-        return -EFAULT;
-    for (uintptr_t pg = start & ~0xFFFu; pg < end; pg += PAGE_SIZE)
-        if (!vmm_user_page_ok(current->pgdir, pg))      /* present and U/S set in PDE and PTE */
-            return -EFAULT;
-    memcpy(dst, usrc, n);                               /* current address space is active */
+    const struct elf32_ehdr *eh = (const void *)image;
+    uint32_t phend, end, prev_end = 0;
+    bool entry_ok = false;
+
+    if (size < sizeof *eh || memcmp(eh->e_ident, "\x7F" "ELF", 4) != 0 ||
+        eh->e_ident[4] != 1 || eh->e_ident[5] != 1 ||          /* 32-bit, little-endian */
+        eh->e_type != 2 || eh->e_machine != 3 ||
+        eh->e_phentsize != sizeof(struct elf32_phdr) ||
+        eh->e_phnum == 0 || eh->e_phnum > MAX_PHNUM ||
+        __builtin_add_overflow(eh->e_phoff, eh->e_phnum * sizeof(struct elf32_phdr), &phend) ||
+        phend > size)
+        return -ENOEXEC;
+
+    const struct elf32_phdr *ph = (const void *)(image + eh->e_phoff);
+    for (int i = 0; i < eh->e_phnum; i++, ph++) {
+        if (ph->p_type != 1)                                   /* only PT_LOAD is loaded */
+            continue;
+        if (__builtin_add_overflow(ph->p_offset, ph->p_filesz, &end) || end > size ||
+            ph->p_filesz > ph->p_memsz || ph->p_vaddr < USER_BASE ||
+            __builtin_add_overflow(ph->p_vaddr, ph->p_memsz, &end) || end > KERNEL_VMA ||
+            (ph->p_vaddr & ~0xFFFu) < prev_end)                /* in order, no shared page */
+            return -ENOEXEC;
+        prev_end = (end + 0xFFFu) & ~0xFFFu;
+        if ((ph->p_flags & 1) && eh->e_entry >= ph->p_vaddr && eh->e_entry < end)
+            entry_ok = true;                                   /* entry in an X segment */
+    }
+    if (!entry_ok)
+        return -ENOEXEC;
+    *entry = eh->e_entry;
     return 0;
 }
 \end{lst}
 
+Because \code{elf_check} is a pure function of a byte buffer, it also compiles on the host, and that makes it a
+perfect \textbf{fuzz target}. A coverage-guided fuzzer such as libFuzzer (part of clang) calls it millions of times
+with mutated inputs under the address and undefined-behaviour sanitizers, and stops at the first out-of-bounds read
+or overflow. Seed it with your real programs, so it starts from valid files and mutates them into almost-valid ones.
+
+\begin{lst}{c}{tests/host/fuzz_elf.c}
+/* clang -g -O1 -fsanitize=fuzzer,address,undefined -Iinclude \
+ *       tests/host/fuzz_elf.c kernel/exec/elf_check.c -o build/fuzz_elf
+ * mkdir -p corpus && cp build/user/*.elf corpus/ && build/fuzz_elf -max_total_time=600 corpus */
+int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
+    uint32_t entry;
+    elf_check(data, size, &entry);
+    return 0;
+}
+\end{lst}
+\verify{A \code{hello} program prints ``Merhaba from ring 3, pid 3'' through \code{write}, then exits, and its pages go
+back to the PMM (free count restored). The ELF fuzz target runs for 10 minutes without a sanitizer report.}
+
+\task{Guard the door}
+Write \code{copy_from_user}, \code{copy_to_user} and \code{strncpy_from_user} in \code{kernel/syscall/uaccess.c}, and
+make that file the only place in the kernel that touches user memory. A user address arrives as a \code{uint32_t}
+system call argument: keep it a \code{uintptr_t} with a name starting with \code{u}, never cast it to a pointer
+anywhere else, and hand it to these functions. Reading needs present user pages; writing also needs \code{PG_WRITE}.
+That second check is not a detail. The ELF loader maps text read-only and \code{CR0.WP} is set, so without it a
+\code{copy_to_user} into a program's own code faults in ring 0, and any program could panic the kernel with
+\code{read(0, (void *)main, 16)}. Phase~11 extends the checks to pages that don't exist yet (a lazily grown heap,
+copy-on-write pages), and because only \code{uaccess.c} touches user memory, that is a change in one file.
+\code{sys_write} copies the user buffer in chunks into a kernel buffer before printing. A \code{sys_read} that waits
+for input checks its buffer with \code{user_range_ok} before it blocks, as Linux's \code{access_ok} does, so a bad
+pointer fails at once; \code{copy_to_user} checks again when the data is there.
+
+\begin{lst}{c}{kernel/syscall/uaccess.c}
+/* The only file in the kernel that dereferences a user address. */
+bool user_range_ok(uintptr_t ustart, size_t n, bool write)
+{
+    uintptr_t end;
+    if (__builtin_add_overflow(ustart, n, &end) || end > KERNEL_VMA)
+        return false;                                   /* wraps around, or reaches the kernel */
+    uint32_t need = PG_PRESENT | PG_USER | (write ? PG_WRITE : 0);
+    for (uintptr_t pg = ustart & ~0xFFFu; pg < end; pg += PAGE_SIZE)
+        if (!vmm_user_page_ok(current->pgdir, pg, need))  /* all bits set in PDE and PTE */
+            return false;
+    return true;
+}
+
+int copy_from_user(void *dst, uintptr_t usrc, size_t n)
+{
+    if (!user_range_ok(usrc, n, false))
+        return -EFAULT;
+    memcpy(dst, (const void *)usrc, n);                 /* current address space is active */
+    return 0;
+}
+
+int copy_to_user(uintptr_t udst, const void *src, size_t n)
+{
+    if (!user_range_ok(udst, n, true))                  /* read-only text: -EFAULT, not a panic */
+        return -EFAULT;
+    memcpy((void *)udst, src, n);
+    return 0;
+}
+\end{lst}
+
+Two more rules keep the boundary tight. \textbf{Copy once}: read a structure or a string from user space into the
+kernel exactly once, then check and use only the copy, never the user memory again. \textbf{Zero before copy}: set
+every structure that goes back to user space to zero with \code{memset} before you fill it, so padding bytes never
+carry old kernel stack or heap contents out. Then write down each call's contract in
+\code{docs/security/syscalls.md}, one row per system call: its arguments, how each is validated, which sums are
+checked for overflow, whether input is copied once, and which errors it returns. A new system call is not done until
+its row exists, and later phases add their rows the same way.
+
+\begin{lst}{plain}{docs/security/syscalls.md}
+| Call   | Arguments    | Validation                     | Overflow  | Copy-once      | Errors        |
+|--------|--------------|--------------------------------|-----------|----------------|---------------|
+| write  | fd, buf, len | fd is 1 or 2; buf readable     | buf + len | 256-byte chunks| EBADF, EFAULT |
+| read   | fd, buf, len | fd is 0; buf writable, checked | buf + len | output only    | EBADF, EFAULT |
+|        |              | before blocking                |           |                |               |
+| getpid | none         | none                           | none      | none           | none          |
+\end{lst}
+
+Then make exceptions depend on who caused them: if \code{(r->cs & 3) == 3}, the fault came from user mode, so print one
+line such as ``hello (pid 3): SIGSEGV at 0x00000000'' and kill that task; only faults in ring 0 still panic. Print the
+name, the PID, the signal and the faulting address, and nothing else. The register dump of Phase~3 is a kernel
+diagnostic: kernel addresses and stack contents help an attacker more than they help the user.
+
 \task{Write evil programs}
 A protection mechanism is only as good as its tests. Write user programs that each try one thing they must not do,
-load them all at once, and check that each is killed or gets an error while \code{hello} and the kernel carry on.
+load them all at once, and check that each is killed, gets an error or is refused by the loader while \code{hello} and
+the kernel carry on. \code{map_zero} and \code{badelf} are not written in C: a short host script patches a copy of
+\code{hello.elf} (a segment moved to address 0, a \code{p_filesz} larger than \code{p_memsz}).
 
 \begin{center}
 \small\renewcommand{\arraystretch}{1.25}
@@ -354,10 +472,116 @@ load them all at once, and check that each is killed or gets an error while \cod
 \code{badptr} & \code{write(1, (void *)0xC0000000, 16)} & \code{write} returns \code{-EFAULT} \\
 \code{hugelen} & \code{write(1, buf, 0xFFFFFFFF)} & \code{-EFAULT} (range wraps around) \\
 \code{badsys} & \code{int 0x80} with EAX = 9999 & returns \code{-ENOSYS} \\
+\code{ro_read} & \code{read(0, (void *)main, 16)}, into its own read-only text & \code{-EFAULT}, kernel survives \\
+\code{map_zero} & an ELF file with a segment at address 0 & refused (\code{-ENOEXEC}) \\
+\code{badelf} & an ELF file whose \code{p_filesz} is larger than \code{p_memsz} & refused (\code{-ENOEXEC}) \\
+\code{stacksmash} & a test-only system call that overflows a local kernel buffer & panic: stack smashing detected \\
 \bottomrule
 \end{tabularx}
 \end{center}
-\verify{All seven behave as listed in a single boot, and \code{ps} afterwards shows only the kernel's own tasks.}
+\verify{The first ten behave as listed in a single boot under \code{make test}, and \code{ps} afterwards shows only the
+kernel's own tasks. \code{stacksmash} exists only in test kernels and is the one program whose expected result is a
+panic (Task~10.10): \code{make test} runs it last, in a boot of its own, and counts the ``stack smashing detected''
+panic as a pass.}
+
+\task{Threat model, stack protector and static analysis}
+Ring 3 exists now, so the Phase~0 stub \code{docs/security/threat-model.md} becomes version 0 of a real threat model.
+Keep its assets, adversaries and out-of-scope list, and add two things. First, the trust boundaries that exist now:
+ring 3 to ring 0 (\code{int 0x80} and every exception raised in user mode), and ELF files to the loader. Second, walk
+each boundary with \textbf{STRIDE}, which names six kinds of threat: spoofing, tampering, repudiation, information
+disclosure, denial of service and elevation of privilege. Write one line per threat: what could happen, which control
+in your kernel stops it, and how much risk is left. Record what you accept as well, such as the lack of a no-execute
+bit for user data under 32-bit paging without PAE. Phases 13 and 15 add their boundaries to the same file.
+
+\begin{lst}{plain}{docs/security/threat-model.md (v0, added sections)}
+## Trust boundaries (v0)
+B1  ring 3 -> ring 0: int 0x80, and every exception raised in user mode
+B2  ELF image -> loader (boot modules now, files from Phase 13)
+
+| ID  | STRIDE | Threat                                 | At | Control                      | Left |
+|-----|--------|----------------------------------------|----|------------------------------|------|
+| T1  | E      | kernel uses a user pointer directly    | B1 | only uaccess.c; CI grep      | low  |
+| T2  | D      | copy_to_user into read-only page       | B1 | PG_WRITE check; ro_read      | low  |
+| T3  | T/E    | length overflow, out-of-bounds write   | B1 | overflow checks; UBSan build | low  |
+| T4  | E      | user memory read twice (TOCTOU)        | B1 | copy once, use the copy      | low  |
+| T5  | I      | padding leaks kernel bytes             | B1 | zero before copy             | low  |
+| T6  | I      | old frame contents reach a process     | B1 | frames zeroed on allocation  | low  |
+| T7  | I/T    | FPU registers shared between tasks     | B1 | fxsave/fxrstor per task      | low  |
+| T8  | E      | user context restored with ring 0 bits | B1 | kernel sets CS, SS, EFLAGS   | low  |
+| T9  | E      | stack buffer overflow in the kernel    | B1 | -fstack-protector-strong     | low  |
+| T10 | T/E    | malformed ELF: OOB access, page 0      | B2 | elf_check; host fuzz target  | low  |
+
+Accepted: no NX for user data (32-bit paging without PAE has no NX bit);
+canary from rdtsc when rdrand is missing (predictable).
+\end{lst}
+
+Next, arm the stack protector. Compile the kernel with \code{-fstack-protector-strong}: GCC then places a canary
+between the local arrays and the saved return address of every function that has such arrays, and checks it before
+the function returns. On \code{i686-elf}, GCC reads the canary from a global variable, \code{__stack_chk_guard} (there
+is no thread-local storage), and calls \code{__stack_chk_fail} when the check fails. You provide both, and the second
+only needs \code{panic}. The guard must be unpredictable, and setting it has one trap. A protected function that was
+entered before the guard changed compares its old canary with the new guard when it returns, and reports stack
+smashing that never happened. So set the guard in \code{canary_init}, which is built with \code{-fno-stack-protector},
+and call it first thing in \code{kmain}, which gets the same flag and never returns. Use \code{rdrand} when CPUID
+reports it (QEMU's \code{-cpu max} has it); otherwise mix \code{rdtsc} with the Multiboot memory map. That fallback is
+predictable, which is acceptable for a teaching system and nothing more, so write it into the threat model.
+
+\begin{lst}{c}{kernel/security/canary.c (built with -fno-stack-protector)}
+uint32_t __stack_chk_guard;
+
+__attribute__((noreturn)) void __stack_chk_fail(void)
+{
+    panic("stack smashing detected");
+}
+
+static bool rdrand32(uint32_t *v)
+{
+    for (int i = 0; i < 10; i++) {                  /* rdrand may fail briefly: retry */
+        uint8_t ok;
+        __asm__ volatile ("rdrand %0; setc %1" : "=r"(*v), "=qm"(ok));
+        if (ok)
+            return true;
+    }
+    return false;
+}
+
+void canary_init(const struct multiboot_info *mbi)  /* first call in kmain */
+{
+    uint32_t a, b, c, d, g = 0;
+    __asm__ volatile ("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1));
+    if (!(c & (1u << 30)) || !rdrand32(&g)) {       /* no rdrand: weak, documented fallback */
+        uint32_t lo, hi;
+        __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
+        g = lo ^ hi;
+        const uint32_t *m = P2V(mbi->mmap_addr);
+        for (uint32_t i = 0; i < mbi->mmap_length / 4; i++)
+            g = (g ^ m[i]) * 0x01000193u;           /* FNV-style mixing */
+    }
+    __stack_chk_guard = g;
+}
+\end{lst}
+
+\begin{lst}{make}{Makefile (stack protector)}
+CFLAGS += -fstack-protector-strong
+$(BUILD)/kernel/kmain.o $(BUILD)/kernel/security/canary.o: CFLAGS += -fno-stack-protector
+\end{lst}
+
+Last, add static analysis to the CI workflow of Phase~7. \code{cppcheck} understands GCC extensions and reports few
+false positives. Run it with \code{--enable=warning,portability} and let any finding fail the job. When a finding is
+wrong, suppress that one finding in \code{tools/cppcheck.supp} with a comment that says why, never a whole check. One
+more step enforces the \code{uaccess.c} rule: outside that file, no \code{u}-named user address is ever cast to a
+pointer.
+
+\begin{lst}{plain}{.github/workflows/ci.yml (additional steps)}
+      - run: sudo apt-get install -y cppcheck
+      - run: cppcheck --enable=warning,portability --error-exitcode=1
+             --suppressions-list=tools/cppcheck.supp -Iinclude kernel lib
+      - run: |
+          ! grep -rnE '\*\) *u[a-z_]+' kernel --include='*.c' --exclude=uaccess.c
+\end{lst}
+\verify{The threat model lists both boundaries, with a STRIDE line, a control and a residual risk for each threat.
+With the protector on, every test passes and \code{stacksmash} ends in ``stack smashing detected''. \code{cppcheck}
+and the grep step pass in CI, and a cast of a user address added on purpose outside \code{uaccess.c} fails the job.}
 
 \section{Testing and debugging}
 
@@ -368,6 +592,8 @@ Triple fault on the first interrupt or syscall from ring 3 & TSS not loaded, \co
 User program never gets preempted & EFLAGS pushed for \code{iret} without IF & OR \code{0x200} into EFLAGS in \code{enter_user_mode}. \\
 Second process crashes after a context switch & CR3 switched, but \code{esp0} still points at the first task's stack & Update \code{esp0} and CR3 together, on every switch. \\
 Kernel crashes inside a system call on a bad pointer & A pointer was used directly instead of through \code{copy_from_user} & Search for every user pointer dereference; there should be none outside \code{uaccess.c}. \\
+Ring-0 page fault with error code 3 inside \code{copy_to_user} & The destination page is present but read-only, and only presence and U/S were checked & Require \code{PG_WRITE} for every page a write touches. \\
+``stack smashing detected'' right after boot, with no overflow in sight & The guard changed while a protected function was still running, so its return compared against the new value & Set the guard in a \code{-fno-stack-protector} function called first in \code{kmain}. \\
 \end{pitfalls}
 
 \section{Milestone}
@@ -377,9 +603,11 @@ Kernel crashes inside a system call on a bad pointer & A pointer was used direct
   \item The TSS is loaded, and \code{esp0} and CR3 are updated on every context switch.
   \item Each process has its own page directory sharing the kernel half.
   \item ELF programs from boot modules run in ring 3 and use \code{write}, \code{getpid}, \code{sleep} and \code{exit}.
-  \item All user pointers pass through \code{copy_from_user}/\code{copy_to_user}.
-  \item All seven evil programs are contained; the kernel never panics because of user code.
-  \item \code{docs/syscalls.md} lists each call: number, arguments, return value, errors.
+  \item Only \code{uaccess.c} touches user memory, and \code{copy_to_user} requires writable pages.
+  \item The ELF loader passes every check of Task~10.7, and its fuzz target runs 10 minutes clean.
+  \item All eleven evil programs behave as listed; apart from \code{stacksmash}'s expected panic, user code never brings the kernel down.
+  \item \code{docs/syscalls.md} lists each call: number, arguments, return value, errors; \code{docs/security/syscalls.md} has its boundary row.
+  \item The threat model is at version 0, the stack protector is on, and CI runs \code{cppcheck} and the uaccess grep.
 \end{checklist}
 \end{milestonebox}
 
@@ -392,6 +620,7 @@ Kernel crashes inside a system call on a bad pointer & A pointer was used direct
   \item Why must both the PDE and the PTE have the U/S bit set? What happens if only the PTE has it?
   \item What does \code{copy_from_user} check, and what could a program do if it didn't?
   \item The kernel is mapped in every address space. Why can't user code read it?
+  \item Why must \code{copy_to_user} check the R/W bit itself, when the CPU checks it anyway?
 \end{enumerate}
 \end{questionbox}
 

@@ -213,7 +213,7 @@ static void page_fault_handler(struct regs *r)
 {
     uint32_t addr;
     __asm__ volatile ("mov %%cr2, %0" : "=r"(addr));
-    kprintf("Page fault at %08x: %s, %s, %s mode%s  (EIP=%08x)\n", addr,
+    kprintf("Page fault at %08lx: %s, %s, %s mode%s  (EIP=%08lx)\n", addr,
             (r->err_code & 1) ? "protection violation" : "page not present",
             (r->err_code & 2) ? "write" : "read",
             (r->err_code & 4) ? "user" : "kernel",
@@ -381,6 +381,58 @@ suite: map and unmap many pages, check \code{vmm_virt_to_phys} after each, and c
 its starting value.
 \verify{Each crash command gives a correctly decoded page-fault report, and \code{make test} passes.}
 
+\task{Make the kernel's code read-only}
+A stray write through a bad pointer can land anywhere in the kernel, and the worst place is its own code: the damage
+shows up much later, in a function that is fine. With CR0.WP already set, marking \code{.text} and \code{.rodata}
+read-only turns that silent corruption into an immediate page fault that names the address. There is one obstacle.
+The loader maps the kernel image with writable 4\,MiB pages, and a 4\,MiB page has one R/W bit for all of it; that is
+why \code{get_pte} asserts it is never used inside one. So first replace each 4\,MiB PDE that covers the kernel image
+with a 4\,KiB page table that maps exactly the same frames, then clear R/W on the pages from \code{kernel_start} up
+to a new linker-script symbol, \code{kernel_ro_end}.
+
+\begin{lst}{plain}{link.ld (one line added after .rodata)}
+    .rodata ALIGN(4K) : AT(ADDR(.rodata) - KERNEL_VMA) { *(.rodata*) }
+    kernel_ro_end = ALIGN(4K);                          /* .text and .rodata end here */
+    .data   ALIGN(4K) : AT(ADDR(.data)   - KERNEL_VMA) { *(.data*) }
+\end{lst}
+
+\begin{lst}{c}{kernel/mm/vmm.c (protecting the kernel image)}
+extern char kernel_start[], kernel_ro_end[], kernel_end[];
+
+/* Split the 4 MiB pages holding the kernel image into 4 KiB pages, then make
+   .text and .rodata read-only. Called once in kmain, right after pmm_init. */
+void vmm_protect_kernel(pde_t *pd)
+{
+    for (uintptr_t va = (uintptr_t)kernel_start & ~0x3FFFFFu;
+         va < (uintptr_t)kernel_end; va += 0x400000) {
+        pde_t *pde = &pd[va >> 22];
+        ASSERT(*pde & PG_4MB);
+        uintptr_t pt = pmm_alloc_frame();
+        ASSERT(pt != 0);                              /* boot time: no memory is a bug */
+        pte_t *table = P2V(pt);
+        uintptr_t frame = *pde & 0xFFC00000u;         /* first frame of the 4 MiB page */
+        for (uint32_t i = 0; i < 1024; i++)           /* same mapping, finer grain     */
+            table[i] = (frame + i * PAGE_SIZE) | PG_PRESENT | PG_WRITE;
+        *pde = pt | PG_PRESENT | PG_WRITE;
+    }
+    for (uintptr_t va = (uintptr_t)kernel_start; va < (uintptr_t)kernel_ro_end; va += PAGE_SIZE)
+        *get_pte(pd, va, false, 0) &= ~(pte_t)PG_WRITE;
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(V2P(pd)) : "memory");   /* flush every old entry */
+}
+\end{lst}
+
+Call it with \code{boot_page_directory}. Then add \code{crash ktext} to the monitor: it writes one byte to the first
+instruction of \code{kmain}, through \code{*(volatile uint8_t *)(uintptr_t)kmain = 0xC3}.
+
+One limit remains, and you should write it down rather than discover it later. Legacy 32-bit paging has no NX bit:
+every page that can be read can also be executed. Read-only code stops writes to code, but nothing stops the CPU from
+executing bytes in a data page, so the i386 build cannot promise that writable memory is never executed. Add that line to the out-of-scope
+list in \code{docs/security/threat-model.md}. PAE paging has an NX bit; the RISC-V and ARM ports of Phases 17 and 18
+have one too.
+\verify{\code{crash ktext} prints ``protection violation, write, kernel mode'' with error code 3 (present, write)
+and an address inside \code{kmain}. \code{info mem} shows the range from \code{c0100000} to \code{kernel_ro_end} as
+\code{-r-} and the rest of the kernel as \code{-rw}, and all PMM and VMM tests still pass.}
+
 \section{Testing and debugging}
 
 The QEMU monitor is your best friend in this phase. \code{info mem} lists mapped virtual ranges with their
@@ -395,6 +447,9 @@ GRUB or QEMU refuses the kernel after the move & The entry point is a virtual ad
 Page fault inside the page-fault handler, then reset & The handler, its stack or \code{kprintf}'s data touches unmapped memory & Everything the fault path uses must be in the kernel half, which is always mapped. \\
 Old data appears after changing a mapping, or a fault after unmapping arrives late or never & Stale TLB entry & \code{invlpg} after every change to an existing entry. \\
 Garbage when reading Multiboot data or boot modules & Physical addresses used as pointers & Read them through \code{P2V}; make sure they lie below 512\,MiB. \\
+Triple fault or random crash right after splitting the kernel PDE & The new page table maps the wrong frames, or the old 4\,MiB entry is still in the TLB & Fill all 1024 entries from the PDE's base (\code{*pde & 0xFFC00000}) before installing it, then reload CR3. \\
+\code{get_pte} assertion ``not inside a 4 MiB page'' when clearing R/W & The PDE covering that part of the image was never split & Split every PDE from \code{kernel_start} rounded down to 4\,MiB up to \code{kernel_end}. \\
+Page fault with error code 3 on \code{lgdt}, a segment load or \code{ltr} & The GDT or TSS is \code{const} and sits in \code{.rodata}; the CPU writes the accessed and busy bits & Keep descriptor tables in \code{.data} or \code{.bss}. \\
 \end{pitfalls}
 
 \section{Milestone}
@@ -407,6 +462,8 @@ Garbage when reading Multiboot data or boot modules & Physical addresses used as
   \item Kernel page tables for \code{0xE0000000}--\code{0xFFBFFFFF} are pre-allocated.
   \item A null-pointer read, a write to a read-only page and an unmapped access each produce a clear report.
   \item All PMM and VMM tests pass.
+  \item The kernel image is mapped with a 4\,KiB page table, \code{.text} and \code{.rodata} are read-only, and \code{crash ktext} page-faults with error code 3 from ring 0.
+  \item The threat model records that 32-bit paging has no NX bit.
 \end{checklist}
 \end{milestonebox}
 
@@ -424,9 +481,7 @@ Garbage when reading Multiboot data or boot modules & Physical addresses used as
 
 \section{Going further}
 
-Map the kernel image with 4\,KiB pages instead of one 4\,MiB page, so \code{.text} and \code{.rodata} can be read-only;
-with CR0.WP set, a stray write into kernel code then faults immediately instead of corrupting it. Mark kernel mappings
-\emph{global} (PTE bit 8, enabled by CR4.PGE) so they survive CR3 reloads, which makes the context switches of Phase 8
+Mark kernel mappings \emph{global} (PTE bit 8, enabled by CR4.PGE) so they survive CR3 reloads, which makes the context switches of Phase 8
 cheaper. If you want NX protection (no execution from data pages), read about PAE paging, which has three levels and
 64-bit entries.
 

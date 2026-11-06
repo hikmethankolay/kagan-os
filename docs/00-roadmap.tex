@@ -192,7 +192,7 @@ Toolchain & \texttt{i686-elf} cross GCC and binutils, GNU Make, Git & A cross co
 Emulator, debugger & QEMU and GDB (remote stub); Bochs is optional & QEMU is fast, scriptable, and has a monitor for inspecting registers and page tables. \LOB uses Bochs, whose debugger is still handy for descriptor-table bugs. \\
 Kernel structure & Monolithic, modular source tree & Simplest to get right for a first kernel. MINIX's microkernel is studied as a contrast, with an optional experiment in Phase 15. \\
 On-disk file system & MINIX V3 layout with 1\,KiB blocks, named TurkFS & The format described in \OSDI\,\S5.6, with source. Linux's \texttt{mkfs.minix -3} and \texttt{fsck.minix} create and check your images, and Linux can even mount them. \\
-Testing & In-kernel \texttt{ktest} suites, headless QEMU, \texttt{isa-debug-exit} & \texttt{make test} boots, runs every test and exits with a pass or fail code, so regressions show up at once (Phase 7). \\
+Testing & In-kernel \texttt{ktest} suites, headless QEMU, \texttt{isa-debug-exit}; host tests and parser fuzzing under AddressSanitizer and UBSan; continuous integration & \texttt{make test} boots, runs every test and exits with a pass or fail code, so regressions show up at once (Phase 7). CI runs it on every push; negative tests (``evil programs'') and a system call fuzzer check the protection boundary from Phases 10 and 11 on. \\
 Port targets & RV32 (\texttt{rv32imac}) with Sv32 paging on QEMU \texttt{virt}, then optionally your own Timur-RV32IMC core; AArch64 (ARMv8-A) at EL1 with 39-bit virtual addresses on QEMU \texttt{virt}, then optionally a Raspberry Pi 4 &
   Sv32 is two-level 4\,KiB paging like x86, so the RISC-V kernel can stay at \texttt{0xC0000000}. AArch64 then changes the instruction set and the word size together: 4\,KiB pages, three-level tables, the kernel in the \texttt{TTBR1} high half (Phases 17, 18). \\
 Port firmware and discovery & OpenSBI in M-mode (the kernel runs in S-mode); QEMU or the Pi firmware on ARM; a flattened devicetree instead of Multiboot &
@@ -211,6 +211,19 @@ functions. In a microkernel like MINIX 3 they run as separate user-space process
 servers and a protocol for every operation before anything works. For a first kernel, plain function calls keep
 the path from idea to running code short. You will still read the MINIX code in every phase, and noticing where the
 two designs differ is one of the best ways to understand both.
+\end{decisionbox}
+
+\begin{decisionbox}{Security starts where its subject starts}
+Turk-OS is a teaching system, not a production one, and its security goal is concrete: no unprivileged program and
+no malformed disk image may crash or take over the kernel, and every claim of that kind is backed by a test. Each
+practice begins in the phase where the thing it protects first exists. Phase~0 writes a short threat-model stub and
+verifies the toolchain downloads; Phase~2 turns every warning into an error; Phase~6 makes kernel code read-only;
+Phase~7 adds continuous integration and a build that traps on undefined behaviour; Phase~10 writes the real threat
+model, routes every user pointer through one small file and starts a table of how each system call checks its
+arguments; Phase~11 starts the system call fuzzer; Phase~13 treats every on-disk structure as untrusted input.
+Phase~15 then consolidates: it finishes the audit, adds users and permissions, and ships a release whose build can
+be reproduced and checked. The model, its trust boundaries and what is out of scope (physical attackers, the boot
+chain, networks, malicious hardware, side channels) live in \texttt{docs/security/threat-model.md}.
 \end{decisionbox}
 
 \begin{decisionbox}{When two books disagree}
@@ -332,22 +345,22 @@ userland and TurkFS image on three architectures (18).
 \endhead
 \bottomrule
 \endlastfoot
-0  & Foundations and toolchain & Cross compiler, QEMU, GDB and a Git repo; C warm-up library with unit tests & 2--3 & 0\,\%\,$\rightarrow$\,5\,\% \\
+0  & Foundations and toolchain & Cross compiler, QEMU, GDB and a Git repo; C warm-up library with unit tests; verified toolchain sources; threat-model stub & 2--3 & 0\,\%\,$\rightarrow$\,5\,\% \\
 1  & x86 assembly and booting & A 512-byte boot sector; a Multiboot kernel that GRUB and QEMU boot & 2--3 & 5\,\%\,$\rightarrow$\,10\,\% \\
 2  & Getting to C: screen, serial, kprintf & VGA text driver, serial logging, \texttt{kprintf}, \texttt{panic} & 1--2 & 10\,\%\,$\rightarrow$\,16\,\% \\
 3  & Segmentation, IDT and exceptions & Your own GDT and IDT; register dump on every CPU exception & 2 & 16\,\%\,$\rightarrow$\,22\,\% \\
 4  & Hardware interrupts & PIC, 100\,Hz timer, keyboard driver, kernel command monitor & 2 & 22\,\%\,$\rightarrow$\,28\,\% \\
 5  & Physical memory management & Memory map parsing, bitmap then buddy page-frame allocator, first kernel tests & 2 & 28\,\%\,$\rightarrow$\,34\,\% \\
-6  & Paging and the higher-half kernel & Paging on, kernel at \texttt{0xC0000000}, VMM API, page-fault reports & 2--3 & 34\,\%\,$\rightarrow$\,42\,\% \\
-7  & Kernel heap and data structures & \texttt{kmalloc}/\texttt{kfree} on slab caches, intrusive lists, \texttt{make test} in headless QEMU & 2 & 42\,\%\,$\rightarrow$\,48\,\% \\
-8  & Processes and scheduling & Kernel threads, context switch, preemptive round-robin (optional fair scheduler), sleep & 3 & 48\,\%\,$\rightarrow$\,56\,\% \\
+6  & Paging and the higher-half kernel & Paging on, kernel at \texttt{0xC0000000}, VMM API, page-fault reports, read-only kernel code & 2--3 & 34\,\%\,$\rightarrow$\,42\,\% \\
+7  & Kernel heap and data structures & \texttt{kmalloc}/\texttt{kfree} on slab caches, intrusive lists, \texttt{make test} in headless QEMU, CI and a trap-on-UB build & 2 & 42\,\%\,$\rightarrow$\,48\,\% \\
+8  & Processes and scheduling & Kernel threads, context switch, preemptive round-robin (optional fair scheduler), sleep, FPU state per task & 3 & 48\,\%\,$\rightarrow$\,56\,\% \\
 9  & Synchronization & Spinlocks, wait queues, mutexes, semaphores, \texttt{refcount\_t}, lock-order checking & 2 & 56\,\%\,$\rightarrow$\,62\,\% \\
-10 & User mode and system calls & TSS, ring 3, \texttt{int 0x80}, ELF loader, first user programs & 3 & 62\,\%\,$\rightarrow$\,70\,\% \\
-11 & Process API & \texttt{fork} (copy-on-write), \texttt{exec}, \texttt{wait}, \texttt{exit}, \texttt{brk}, basic signals & 3 & 70\,\%\,$\rightarrow$\,77\,\% \\
+10 & User mode and system calls & TSS, ring 3, \texttt{int 0x80}, checked user-memory access, validating ELF loader, threat model, first user programs & 3 & 62\,\%\,$\rightarrow$\,70\,\% \\
+11 & Process API & \texttt{fork} (copy-on-write), \texttt{exec}, \texttt{wait}, \texttt{exit}, \texttt{brk}, basic signals, system call fuzzer & 3 & 70\,\%\,$\rightarrow$\,77\,\% \\
 12 & Storage & ATA PIO driver, block layer, MBR partitions, buffer cache & 2 & 77\,\%\,$\rightarrow$\,83\,\% \\
-13 & File systems & VFS, file descriptors, tar initrd, writable TurkFS & 3--4 & 83\,\%\,$\rightarrow$\,90\,\% \\
+13 & File systems & VFS, file descriptors, tar initrd, writable TurkFS that rejects corrupted images & 3--4 & 83\,\%\,$\rightarrow$\,90\,\% \\
 14 & Userland & Turk-libc, pipes, tty line discipline, \texttt{tsh} shell, coreutils & 3 & 90\,\%\,$\rightarrow$\,96\,\% \\
-15 & Hardening and release & Fuzzing, permissions, benchmarks, docs, v1.0 ISO; optional tracks & 3--4+ & 96\,\%\,$\rightarrow$\,100\,\% \\
+15 & Hardening and release & Final security audit, users, permissions and sessions, benchmarks, docs, a reproducible and signed v1.0; optional tracks & 3--4+ & 96\,\%\,$\rightarrow$\,100\,\% \\
 \midrule
 16 & Portability: an architecture layer & x86 moved to \texttt{kernel/arch/i386}, \texttt{include/arch.h}, \texttt{struct bootinfo}, a host-tested devicetree parser, one Makefile for three \texttt{ARCH} values & 2--3 & V:\,0\,\%\,$\rightarrow$\,20\,\% \\
 17 & The RISC-V port & Turk-OS on \texttt{qemu-system-riscv32 -machine virt}: OpenSBI, Sv32, PLIC, virtio-blk, boot to \texttt{tsh}; optionally your Timur-RV32IMC core & 5--6+ & V:\,20\,\%\,$\rightarrow$\,60\,\% \\
@@ -536,6 +549,7 @@ Assembly learning curve & High & Phase 1 is dedicated to it. Read compiler outpu
 Memory corruption that shows up far from its cause & High & Assertions everywhere, magic numbers in headers, guard pages, \texttt{heap\_check()}, deterministic tests. \\
 Stuck on one bug for days & High & Use the protocol below. Time-box the bug, then change approach. \\
 Scope creep (GUI or networking too early) & Medium & Exit criteria are the definition of done. New ideas go on a ``later'' list for Phase 15. \\
+A user program or a corrupted disk image can crash the kernel, found only at the end & Medium & Each phase that adds an entry point adds its negative tests at once: evil programs from Phase 10, the system call fuzzer from Phase 11, host fuzzing of every parser from Phase 13, all run in CI. \\
 Toolchain trouble (cross-GCC build, Flatpak sandbox) & Medium & Phase 0 checklist, a host terminal, documented fallback compiler flags. \\
 Outdated instructions in \LOB & High & The phase docs give current equivalents (\texttt{grub2-mkrescue}, QEMU); the OSDev Wiki has errata. \\
 Losing motivation & Medium & A visible milestone every 2--3 weeks. Record a short demo at each milestone and keep the journal. \\
@@ -564,25 +578,25 @@ Stage V: scope creep (SMP, graphics on the ports) & Medium & The Stage V exit cr
 Print this page and tick each box when that phase's exit criteria are fully met.
 
 \begin{checklist}
-  \item \textbf{P0}\enspace \texttt{i686-elf-gcc}, NASM, QEMU and GDB work; repo created; C warm-up library passes its tests.
+  \item \textbf{P0}\enspace \texttt{i686-elf-gcc}, NASM, QEMU and GDB work; repo created; toolchain signatures verified; C warm-up library and overflow helpers pass their tests; threat-model stub written.
   \item \textbf{P1}\enspace Boot sector prints a message; Multiboot kernel boots via \texttt{-kernel} and via a GRUB ISO.
-  \item \textbf{P2}\enspace Colored banner on screen, same log on the serial port, \texttt{kprintf} and \texttt{panic} tested.
+  \item \textbf{P2}\enspace Colored banner on screen, same log on the serial port, \texttt{kprintf} and \texttt{panic} tested; the kernel builds with \texttt{-Werror}.
   \item \textbf{P3}\enspace Own GDT and IDT loaded; divide-by-zero shows a register dump; \texttt{int3} returns cleanly.
   \item \textbf{P4}\enspace Timer ticks at 100\,Hz; keyboard input with shift and caps; monitor commands run.
   \item \textbf{P5}\enspace Memory map printed; bitmap and then buddy allocator pass the tests from 16\,MiB to 3\,GiB of RAM.
-  \item \textbf{P6}\enspace Kernel runs at \texttt{0xC0000000}; null dereference produces a clean page-fault report.
-  \item \textbf{P7}\enspace 10\,000-operation stress test passes through the slab caches; \texttt{make test} runs headless.
-  \item \textbf{P8}\enspace Several kernel threads preempt each other; \texttt{sleep} works; no leaks over 1000 task cycles.
+  \item \textbf{P6}\enspace Kernel runs at \texttt{0xC0000000}; null dereference produces a clean page-fault report; a write to kernel code faults.
+  \item \textbf{P7}\enspace 10\,000-operation stress test passes through the slab caches; \texttt{make test} runs headless and in CI; the trap-on-UB build passes; allocation failures are handled.
+  \item \textbf{P8}\enspace Several kernel threads preempt each other; \texttt{sleep} works; no leaks over 1000 task cycles; FPU state stays with its task.
   \item \textbf{P9}\enspace Race demo fixed by locks; bounded buffer and dining philosophers run without deadlock; lock order checked.
-  \item \textbf{P10}\enspace Ring-3 program prints through \texttt{write}; faulty programs are killed, the kernel survives.
-  \item \textbf{P11}\enspace \texttt{fork}/\texttt{exec}/\texttt{wait} chain works; copy-on-write verified; no leaks over 1000 forks.
-  \item \textbf{P12}\enspace QEMU disk identified; data survives reboot; partitions detected; buffer cache in use.
-  \item \textbf{P13}\enspace Files written by Turk-OS pass \texttt{fsck.minix} on the host; file descriptor semantics tested.
-  \item \textbf{P14}\enspace Boots to the \texttt{tsh} prompt; pipes, redirection and Ctrl+C work; coreutils present.
-  \item \textbf{P15}\enspace One hour of fuzzing without a panic; benchmarks and docs written; v1.0 tagged.
+  \item \textbf{P10}\enspace Ring-3 program prints through \texttt{write}; faulty and malicious programs are killed or get errors, the kernel survives; malformed ELF files are rejected; every system call has a row in the boundary table.
+  \item \textbf{P11}\enspace \texttt{fork}/\texttt{exec}/\texttt{wait} chain works; copy-on-write verified, also through \texttt{copy\_to\_user}; no leaks over 1000 forks; ten minutes of fuzzing without a panic.
+  \item \textbf{P12}\enspace QEMU disk identified; data survives reboot; partitions detected and corrupted tables rejected; buffer cache in use.
+  \item \textbf{P13}\enspace Files written by Turk-OS pass \texttt{fsck.minix} on the host; file descriptor semantics tested; corrupted images are rejected without a panic; the parsers survive an hour of host fuzzing.
+  \item \textbf{P14}\enspace Boots to the \texttt{tsh} prompt; pipes, redirection and Ctrl+C work; coreutils present; resource limits enforced.
+  \item \textbf{P15}\enspace One hour of fuzzing as an ordinary user without a panic; permission and session tests pass; benchmarks, docs and the threat model finished; two clean builds match and v1.0 is tagged and signed.
   \item \textbf{P16}\enspace Generic code free of x86 (audit in \texttt{docs/porting.md}); \texttt{make ARCH=i386 test} passes; generic code compiles for riscv32 and aarch64 without warnings; FDT parser passes its host tests.
-  \item \textbf{P17}\enspace \texttt{qemu-system-riscv32 -machine virt} boots to the \texttt{tsh} prompt; \texttt{make ARCH=riscv32 test} passes; a TurkFS image written on RISC-V passes \texttt{fsck.minix}.
-  \item \textbf{P18}\enspace \texttt{qemu-system-aarch64 -machine virt} boots to the \texttt{tsh} prompt; \texttt{make ARCH=aarch64 test} passes; the same TurkFS image works on all three; v2.0 tagged.
+  \item \textbf{P17}\enspace \texttt{qemu-system-riscv32 -machine virt} boots to the \texttt{tsh} prompt; \texttt{make ARCH=riscv32 test} passes, evil programs included; W\textasciicircum X holds; a TurkFS image written on RISC-V passes \texttt{fsck.minix}.
+  \item \textbf{P18}\enspace \texttt{qemu-system-aarch64 -machine virt} boots to the \texttt{tsh} prompt; \texttt{make ARCH=aarch64 test} passes, evil programs included; W\textasciicircum X holds; the same TurkFS image works on all three; v2.0 tagged.
 \end{checklist}
 
 \booklegend

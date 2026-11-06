@@ -156,6 +156,7 @@ struct task {
     uint32_t         cpu_ticks;    /* accounting for ps                              */
     struct list_node node;         /* on the run queue, a sleep queue, or zombies    */
     struct list_node all;          /* on the list of all tasks                       */
+    uint8_t          fpu[512] __attribute__((aligned(16)));  /* fxsave area (Task 8.3) */
 };
 
 extern struct task *current;
@@ -192,6 +193,44 @@ switch_context:
     ret                     ; return to wherever the new task last called switch_context
 \end{lst}
 
+\code{switch_context} saves only general registers, but the CPU has more state: the eight x87 registers and, on
+every CPU QEMU emulates, the SSE registers. Decide now who may use them, because this is where tasks change hands.
+The kernel never does: add \code{-mgeneral-regs-only} (GCC 7 or later) to the kernel's \code{CFLAGS} from Phase~2, so
+the compiler never emits a floating-point or SSE instruction in kernel code. User programs (Phase~10) are another
+matter. If two of them use \code{double} and the kernel switches between them without saving these registers, each
+one computes with the other's values, and one can read what the other was working on. There are two clean policies.
+The first, which Turk-OS takes, saves and restores the state on every switch with \code{fxsave} and \code{fxrstor},
+into a 512-byte area per task that must be 16-byte aligned (the \code{fpu} field above: \code{kmalloc} returns
+16-byte aligned blocks, and a slab cache for \code{struct task} must keep its objects aligned the same way). A new task
+starts from the clean state that \code{fninit} produces. The second forbids floating point in user space: build
+programs with \code{-msoft-float}, set \code{CR0.EM} so that any FPU instruction raises \#NM, and kill the process
+that executes one. Saving is the better choice, because a C library \texttt{printf("\%f")} sooner or later needs it.
+
+\begin{lst}{c}{kernel/arch/i386/fpu.c}
+uint8_t fpu_initial[512] __attribute__((aligned(16)));   /* copied into every new task */
+
+void fpu_init(void)                     /* once at boot; CPUID.1:EDX bit 24 (FXSR) must be set */
+{
+    uint32_t cr0, cr4;
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    cr0 = (cr0 & ~(1u << 2 | 1u << 3)) | 1u << 1 | 1u << 5;   /* EM=0 TS=0, MP=1 NE=1 */
+    __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    cr4 |= 1u << 9 | 1u << 10;          /* OSFXSR, OSXMMEXCPT: fxsave covers SSE too */
+    __asm__ volatile ("mov %0, %%cr4" : : "r"(cr4));
+    __asm__ volatile ("fninit; fxsave %0" : "=m"(fpu_initial));
+}
+
+void fpu_switch(struct task *prev, struct task *next)   /* from schedule() */
+{
+    __asm__ volatile ("fxsave %0"  : "=m"(prev->fpu));
+    __asm__ volatile ("fxrstor %0" : : "m"(next->fpu));
+}
+\end{lst}
+\verify{Two test tasks each load a different value into an x87 register with inline \code{fld}, spin long enough to be
+preempted many times, store it back with \code{fstp} and check it; both find their own value. In Phase~10, repeat the
+test as two user programs running floating-point loops with \code{double}: both print the correct result.}
+
 \task{Creating a task}
 A new task has never called \code{switch_context}, so fake it: build its stack so the pops and \code{ret} land in a
 small trampoline. The trampoline enables interrupts (the new task doesn't return through an interrupt path that
@@ -213,6 +252,7 @@ struct task *task_create(const char *name, void (*entry)(void *), void *arg)
     *--sp = 0;                              /* edi                             */
     t->esp = (uint32_t)sp;
 
+    memcpy(t->fpu, fpu_initial, sizeof t->fpu);   /* clean FPU state, as after fninit */
     t->pid = next_pid++;
     strncpy(t->name, name, sizeof t->name - 1);
     make_ready(t);                          /* state = READY, append to run queue */
@@ -267,6 +307,7 @@ void schedule(void)                         /* interrupts must be disabled */
     if (next == prev)
         return;
     current = next;
+    fpu_switch(prev, next);                 /* x87/SSE registers belong to the task */
     switch_context(&prev->esp, next->esp);
 }
 
@@ -351,6 +392,7 @@ Preemption works once, then the timer stops & EOI sent after the IRQ handler, wh
 New task crashes at its first instruction & The initial stack doesn't match \code{switch_context}'s pop order & Five words: EDI, ESI, EBX, EBP, return address, from low to high. \\
 New task runs, but never gets preempted & Interrupts disabled in the new task & The trampoline must execute \code{sti}. \\
 Random corruption, other tasks' data changes & Kernel stack overflow into a neighbour & Guard pages turn this into a page fault; make stacks bigger or recursion shallower. \\
+\#GP on \code{fxsave} or \code{fxrstor} & The task's \code{fpu} area is not 16-byte aligned & Check the allocator's alignment, including the slab cache for \code{struct task}; assert \code{((uintptr_t)t->fpu & 15) == 0}. \\
 Crash in \code{task_exit} or right after & The task freed its own stack while running on it & Only mark it as a zombie; let another task reap it. \\
 Queue corruption under load & \code{schedule()} entered with interrupts enabled, so a timer interrupt re-entered it & Every path into \code{schedule()} disables interrupts first; assert IF is clear at its start. \\
 \end{pitfalls}
@@ -361,6 +403,7 @@ Queue corruption under load & \code{schedule()} entered with interrupts enabled,
 \begin{checklist}
   \item Kernel threads run with their own 16\,KiB stacks and guard pages.
   \item \code{switch_context} and \code{task_trampoline} work; you can explain every instruction.
+  \item The kernel is built with \code{-mgeneral-regs-only}, and every task has its own FPU state, saved and restored on each switch.
   \item At least three threads share the CPU preemptively, without calling \code{yield}.
   \item \code{sleep_ms} blocks properly; the idle task halts the CPU when nothing is ready.
   \item Tasks exit and are reaped; 1000 create/exit cycles leak no memory.

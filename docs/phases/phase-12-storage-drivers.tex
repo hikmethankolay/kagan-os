@@ -151,7 +151,8 @@ qemu-system-i386 -kernel build/kernel.elf -serial stdio \
 Select the master drive (\code{0xA0} to \code{0x1F6}), zero the count and LBA registers, send \code{0xEC}, and read the
 status. Zero means no drive. Otherwise wait for BSY to clear; if the LBA mid and high registers are now non-zero, the
 device is not an ATA disk. Wait for DRQ (or ERR), then read 256 words. Words 27--46 hold the model name, with the two
-bytes of every word swapped, and words 60--61 hold the number of 28-bit addressable sectors.
+bytes of every word swapped, and words 60--61 hold the number of 28-bit addressable sectors. Keep that number:
+in \code{hda_sectors}: it is the size of the disk, and every request beyond it is refused.
 \verify{At boot the kernel prints \code{hda: QEMU HARDDISK, 131072 sectors (64 MiB)}.}
 
 \task{Read and write sectors, polling}
@@ -195,6 +196,8 @@ static int wait_ready(void)
 
 int ata_read(uint32_t lba, uint8_t count, void *buf)
 {
+    if (count == 0 || lba >= hda_sectors || count > hda_sectors - lba)
+        return -EIO;                                /* past the size IDENTIFY reported */
     outb(ATA_DRIVE, 0xE0 | ((lba >> 24) & 0x0F));   /* LBA mode, master, LBA 24..27 */
     delay400ns();
     outb(ATA_SECCOUNT, count);
@@ -211,7 +214,8 @@ int ata_read(uint32_t lba, uint8_t count, void *buf)
 }
 \end{lst}
 \verify{Write a pattern to sectors 100--107, read it back and compare. Then exit QEMU and look at the image on
-the host with \code{hexdump -C -s $((100*512)) -n 64 build/disk.img}: your pattern is there.}
+the host with \code{hexdump -C -s $((100*512)) -n 64 build/disk.img}: your pattern is there. Reading the last sector
+works; reading one sector past it returns \code{-EIO}.}
 
 \task{Let the disk interrupt}
 Polling wastes the CPU while the disk works. Enable disk interrupts (clear nIEN in the device control register),
@@ -246,6 +250,11 @@ Read sector 0 of each disk. If bytes 510--511 are \code{55 AA}, parse the four 1
 entry as a block device (\code{hda1}\dots\code{hda4}) whose read and write add the offset and reject any request that
 would cross the partition's end. Partition the image on the host; type \code{81} is the traditional MINIX type, which
 fits the file system of Phase 13.
+
+The MBR is data from the disk, not something you wrote, so check each entry before you trust it. An entry is used only
+if its first LBA is not zero, its length is not zero, and \code{start + length} neither overflows nor exceeds the
+disk's sector count; it must also not overlap an entry you have already accepted. Log every rejected entry with the
+reason (``hda3: ends at sector 200000, past the end of the disk'') and create no device for it.
 
 \begin{lst}{sh}{terminal}
 echo 'start=2048, type=81' | sfdisk build/disk.img
@@ -290,7 +299,8 @@ buffers; after \code{bsync} the dirty count is zero.}
 
 \task{Tools and tests}
 Add \code{lsblk} and \code{hexdump <dev> <block>} to the monitor. Add tests for block device reads and writes on
-\code{ram0}, partition bounds checking, cache hits and eviction (touch 100 different blocks with 64 buffers), and a
+\code{ram0}, partition bounds checking, a disk read past the last sector (\code{-EIO}), an MBR with an entry
+past the end of the disk and two overlapping entries (no partition device appears, and the log says why), cache hits and eviction (touch 100 different blocks with 64 buffers), and a
 persistence test: write a known block, \code{bsync}, reboot with the same image, and check it.
 
 \section{Testing and debugging}
@@ -310,6 +320,7 @@ Partition data lands in the wrong place & The partition offset is applied twice,
 \begin{checklist}
   \item The ATA driver identifies the QEMU disk, and reads and writes with interrupts and a blocking wait.
   \item All disk access goes through \code{struct blockdev}; partitions from the MBR appear as their own devices.
+  \item Requests beyond the size reported by IDENTIFY fail with \code{-EIO}, and invalid or overlapping MBR entries create no device.
   \item The RAM disk works from a boot module.
   \item The buffer cache serves repeated reads from memory and writes dirty blocks back on \code{bsync}.
   \item Data written by Turk-OS survives a reboot and is visible with \code{hexdump -C} on the host.

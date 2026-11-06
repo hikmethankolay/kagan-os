@@ -213,13 +213,24 @@ struct file {
     int           refcnt;               /* descriptors pointing here            */
 };
 \end{lst}
+Give the VFS one place where access is decided: \code{int vfs_permission(struct inode *ino, int mask)}, with
+\code{mask} made of \code{MAY_READ}, \code{MAY_WRITE} and \code{MAY_EXEC}. Call it from every VFS operation before
+the file system does any work: \code{open} (with the mask its flags ask for), \code{execve}, \code{chdir}, path
+lookup (\code{MAY_EXEC} on each directory it passes through), and \code{create}, \code{mkdir} and \code{unlink} (\code{MAY_WRITE}
+on the parent). There are no users yet, so it returns 0; Phase 15 fills in the body, and no call site has to change.
 
 \task{Descriptors and the basic calls}
-Give each process a table of 32 \code{struct file} pointers. \code{open} resolves the path, allocates a
+Give each process a table of 64 \code{struct file} pointers (\code{OPEN_MAX}). \code{open} resolves the path, allocates a
 \code{struct file} and returns the lowest free descriptor. \code{read} and \code{write} copy through a kernel buffer
 with \code{copy_to_user}/\code{copy_from_user} and advance the offset. \code{close} drops a reference. \code{dup} and
 \code{dup2} copy a pointer and increment the count. \code{fork} copies the whole table, incrementing every count;
-\code{exec} keeps it; \code{exit} closes everything. Keep using the Linux i386 numbers.
+\code{exec} keeps it, except the descriptors marked close-on-exec; \code{exit} closes everything. The close-on-exec
+flag belongs to the descriptor, not to the \code{struct file}, so keep it in a 64-bit mask next to the table: \code{open}
+sets the bit when its flags contain \code{O_CLOEXEC}, \code{fcntl(fd, F_SETFD, FD_CLOEXEC)} sets or clears it,
+\code{dup} and \code{dup2} clear it for the new descriptor, \code{fork} copies the mask, and \code{exec} closes every
+marked descriptor once the new program has loaded. A program that runs another one under a different identity, such
+as \code{login} in Phase 15, uses it so that its open files do not leak into the child. Keep using the Linux i386
+numbers.
 
 \begin{center}
 \small\renewcommand{\arraystretch}{1.2}
@@ -231,6 +242,7 @@ with \code{copy_to_user}/\code{copy_from_user} and advance the offset. \code{clo
 \code{close} & 6 & \code{mkdir} & 39 & \code{fstat} & 108 \\
 \code{unlink} & 10 & \code{dup} & 41 & \code{getdents} & 141 \\
 \code{chdir} & 12 & \code{dup2} & 63 & \code{getcwd} & 183 \\
+\code{fcntl} & 55 & & & & \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -250,13 +262,41 @@ as an octal ASCII string (12 bytes at offset 124), the type (one byte at 156: \c
 directory) and the magic \code{"ustar"} at offset 257. Build the archive from a \code{rootfs/} directory in the
 Makefile, load it as a boot module, and mount it at \code{/}. Now \code{execve} can take real paths.
 
+Treat the header as untrusted input, and keep the parsing in \code{lib/tar.c}, separate from the VFS glue, so it
+can also be compiled for the host (Task~13.10). Verify the checksum: the octal number in the 8 bytes at offset 148
+must equal the sum of all 512 header bytes as unsigned values, with the checksum field itself counted as eight
+spaces. Parse every octal field with a range check, and reject a file whose contents would end past the end of the
+archive.
+
+\begin{lst}{c}{lib/tar.c (octal fields)}
+/* Parse an octal field of n bytes (leading spaces, then digits, then NUL or space).
+ * Returns 0, or -EINVAL for a bad character or a value that does not fit in 32 bits. */
+int tar_octal(const char *f, size_t n, uint32_t *out)
+{
+    size_t i = 0;
+    uint32_t v = 0;
+    while (i < n && f[i] == ' ')
+        i++;
+    for (; i < n && f[i] >= '0' && f[i] <= '7'; i++) {
+        if (v > (UINT32_MAX >> 3))
+            return -EINVAL;                       /* one more digit would overflow */
+        v = (v << 3) | (uint32_t)(f[i] - '0');
+    }
+    if (i < n && f[i] != '\0' && f[i] != ' ')
+        return -EINVAL;
+    *out = v;
+    return 0;
+}
+\end{lst}
+
 \begin{lst}{make}{Makefile (root archive)}
 $(BUILD)/initrd.tar: $(USER_PROGS) $(shell find rootfs -type f)
 	mkdir -p rootfs/bin && cp $(USER_PROGS) rootfs/bin/
 	tar --format=ustar -cf $@ -C rootfs .
 \end{lst}
 \verify{\code{execve("/bin/hello", ...)} loads the program from the archive, and \code{cat /etc/motd} (from the
-monitor for now) prints a file you put in \code{rootfs/etc/}.}
+monitor for now) prints a file you put in \code{rootfs/etc/}. An archive with one header byte changed is refused
+because of its checksum, and a size of \code{77777777777} is rejected instead of wrapping around.}
 
 \task{Path lookup}
 Write \code{namei(path, &inode)}. Start at the root for absolute paths and at the process's current directory
@@ -275,6 +315,17 @@ buffer cache and check the magic and block size; read inodes by number (inode $n
 $2 + \text{imap} + \text{zmap} + (n-1)/16$, at offset $((n-1) \bmod 16) \times 64$); map a file offset to a zone through the direct,
 single and double indirect pointers; search directories entry by entry.
 
+The image may come from anywhere, so check everything on it before you use it as an index. At mount, refuse with
+\code{-EINVAL} unless the superblock is consistent: \code{s_ninodes} and \code{s_zones} are not zero; the inode
+bitmap has room for $\code{s_ninodes} + 1$ bits and the zone bitmap for $\code{s_zones} - \code{s_firstdatazone} + 1$
+bits (8192 bits per block); \code{s_firstdatazone} lies after the inode table and before \code{s_zones}; \code{s_zones}
+fits on the device; and \code{s_log_zone_size} is 0. After mount, check on every use: an inode number taken from a
+directory entry must satisfy $1 \le n \le \code{s_ninodes}$, and a zone number taken from an inode or an indirect block
+must satisfy $\code{s_firstdatazone} \le z < \code{s_zones}$ (0 means a hole). Anything else returns \code{-EIO} and
+logs the inode and the bad value; nothing on the disk may make the kernel read or write outside a buffer. Keep these
+checks and the decoding of on-disk structures in \code{lib/turkfs_parse.c}, without kernel calls, so the host can
+compile it too.
+
 \begin{lst}{sh}{terminal (host)}
 dd if=/dev/zero of=build/turkfs.img bs=1024 count=32768     # 32 MiB
 mkfs.minix -3 build/turkfs.img                               # MINIX V3 layout, 1 KiB blocks
@@ -283,7 +334,9 @@ sudo cp -r rootfs/* /mnt && sudo umount /mnt
 qemu-system-i386 ... -drive file=build/turkfs.img,format=raw,if=ide,index=1,media=disk
 \end{lst}
 \verify{\code{ls /mnt} (with the monitor, or a test program using \code{getdents}) lists what you copied from Linux,
-and reading a file larger than 263\,KiB gives the right contents, which exercises the double indirect block.}
+and reading a file larger than 263\,KiB gives the right contents, which exercises the double indirect block.
+Mounting an image whose \code{s_ninodes} is 0 fails with \code{-EINVAL}, and reading a file whose inode points to a
+zone past \code{s_zones} fails with \code{-EIO}; neither panics.}
 
 \task{TurkFS, writing}
 Now allocation. Find a free inode by scanning the inode bitmap; find a free zone by scanning the zone bitmap and
@@ -299,7 +352,9 @@ link. Add a \code{sync} system call and flush all file systems at shutdown.
 
 \task{stat, fstat and getdents}
 Define \code{struct stat} (device, inode, mode, link count, size, times) and \code{struct dirent} (inode number, name),
-and implement the three calls through the inode operations. These are what \code{ls} will use in Phase 14.
+and implement the three calls through the inode operations. \code{memset} each structure to zero before you fill
+it: the compiler leaves padding between fields and after a short name, and without the \code{memset} those bytes
+carry old kernel stack contents to the user. These are what \code{ls} will use in Phase 14.
 
 \task{Tests}
 Add these to \code{make test}, running on a fresh image each time; after the run, \code{make test} also runs
@@ -317,9 +372,45 @@ Add these to \code{make test}, running on a fresh image each time; after the run
 \code{paths} & \code{.}, \code{..}, \code{//}, relative paths, crossing into and out of \code{/mnt} and \code{/dev} \\
 \code{fd_sharing} & after \code{fork}, parent and child share an offset; after \code{dup2}, two descriptors share one; closing one leaves the other working \\
 \code{readonly_root} & writing to the tar root fails with \code{-EROFS} \\
+\code{bad_images} & every image in \code{tests/data/} (bad superblock, inode or zone numbers out of range, bad tar checksum) gives \code{-EINVAL} or \code{-EIO}, never a panic \\
+\code{cloexec} & a descriptor opened with \code{O_CLOEXEC} is closed in the program started by \code{exec}; one without it stays open \\
 \bottomrule
 \end{tabularx}
 \end{center}
+
+Also test an unclean shutdown. A host script starts QEMU with a program that creates, writes and deletes files in a
+loop, kills QEMU with \code{kill -9} after a random number of seconds, runs \code{fsck.minix -a} on the image, and boots
+again. \code{fsck.minix} must be able to repair the image, and the next mount must succeed without a panic; run it
+twenty times. Finally, extend \code{user/bin/fuzz} from Phase 11 with the file calls: random and over-long paths,
+paths through regular files and with many \code{..}, offsets for \code{lseek} near $2^{31}$, descriptors that are
+closed, out of range or negative, and random flags for \code{open}.
+
+\task{Fuzz the parsers on the host}
+\code{lib/turkfs_parse.c} and \code{lib/tar.c} use nothing from the kernel, so compile them for the host and feed them
+random input much faster than QEMU could. Write one fuzz target per parser in \code{tests/host/}: the tar target
+walks an archive given as a byte buffer; the TurkFS target treats the buffer as an image, validates the superblock,
+and then reads every inode and follows every zone pointer it finds. Build them with libFuzzer
+(\code{clang -fsanitize=fuzzer,address,undefined}) or with AFL++. Seed the corpus with small images made by \code{mkfs.minix} and
+a few files, and with the \code{initrd.tar} of your build.
+
+\begin{lst}{c}{tests/host/fuzz_tar.c}
+#include <stddef.h>
+#include <stdint.h>
+#include "tar.h"
+
+int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
+    struct tar_entry e;
+    size_t off = 0;
+    while (tar_next(data, size, &off, &e) == 0)    /* every field checked inside */
+        ;
+    return 0;
+}
+\end{lst}
+Every crash or sanitizer report the fuzzer finds is a bug in the parser. Save the input that caused it in
+\code{tests/data/}, fix the bug, and add the file to the \code{bad_images} ktest so it can never come back.
+\verify{Each fuzz target runs for one hour without a crash or a sanitizer report, and every file in \code{tests/data/}
+passes \code{bad_images}.}
 
 \section{Testing and debugging}
 
@@ -345,6 +436,10 @@ Deadlock while creating a file & A directory inode lock and a buffer lock taken 
   \item Programs are loaded by path from the file system.
   \item TurkFS reads and writes files and directories, and \code{fsck.minix -f} on the host finds no errors.
   \item All file-system tests pass, including the 2\,MiB file.
+  \item The superblock is validated at mount, every inode and zone number is checked on use, and tar headers have their checksum and sizes checked.
+  \item The TurkFS and tar host fuzz targets run for an hour without a crash, and every crash they ever found is a ktest.
+  \item Every VFS operation calls \code{vfs_permission}; \code{exec} closes \code{O_CLOEXEC} descriptors; \code{stat} and \code{dirent} are zeroed before they are filled.
+  \item After a QEMU kill during writes, \code{fsck.minix} repairs the image and the next mount does not panic; \code{fuzz} covers the file calls.
 \end{checklist}
 \end{milestonebox}
 

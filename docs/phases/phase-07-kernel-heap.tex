@@ -116,8 +116,9 @@ fixed tables for some objects. Think about which one you would choose for the pr
 
 \task{Whole pages from the direct map}
 Add \code{kalloc_page()} and \code{kfree_page()}. Because the direct map covers all usable RAM, a frame from the PMM
-is already reachable at \code{P2V(frame)}, so these are two one-line functions. Zero pages on allocation while you
-are debugging, so you never read stale data.
+is already reachable at \code{P2V(frame)}, so these are two one-line functions. Always zero pages on allocation, not
+only while debugging: you never read stale data, and once Phase 10 maps such frames into user space, no process can
+see what the kernel or an earlier process left in them.
 
 \begin{lst}{c}{kernel/mm/kalloc.c}
 void *kalloc_page(void)
@@ -322,6 +323,84 @@ decoded with \code{PTR_ERR(p)}. The top 4\,KiB of the address space are never va
 collide. The system call layer of Phase~10 then passes the same negative codes straight to user space.
 \end{tipbox}
 
+\task{Test every push}
+A test suite that you run only when you remember is half a test suite. Now that \code{make test} exists, let a
+continuous integration service run it on every push. Any Git-based CI works; the GitHub Actions workflow below is
+short. Each run does three things: the \code{-Werror} build, the Phase~0 host tests of \code{lib/} under the address
+and undefined-behaviour sanitizers (put that command into a \code{host-test} target), and \code{make test} in headless
+QEMU with its 120\,s timeout. Building GCC on every run takes too long, so cache the built cross compiler under a key
+derived from \code{docs/toolchain.lock}: the cache is rebuilt exactly when the recorded versions change. Put the
+Phase~0 build commands into \code{tools/build-toolchain.sh} so the CI runs the same steps you did.
+
+\begin{lst}{plain}{.github/workflows/ci.yml}
+name: ci
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 3 * * *'                   # nightly: adds the UBSan build
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y nasm qemu-system-x86
+      - uses: actions/cache@v4
+        id: cross
+        with:
+          path: ~/opt/cross
+          key: cross-${{ hashFiles('docs/toolchain.lock') }}
+      - if: steps.cross.outputs.cache-hit != 'true'
+        run: tools/build-toolchain.sh
+      - run: echo "$HOME/opt/cross/bin" >> "$GITHUB_PATH"
+      - run: make                           # CFLAGS contain -Werror
+      - run: make host-test                 # lib/ under ASan + UBSan
+      - run: make test
+      - if: github.event_name == 'schedule'
+        run: make clean && make test UBSAN=1
+\end{lst}
+
+The host sanitizers can't run inside the kernel, but one of them has a mode that needs no runtime at all.
+\code{make test UBSAN=1} adds \code{-fsanitize=undefined -fsanitize-undefined-trap-on-error} to the kernel's C files:
+GCC then checks signed overflow, out-of-range shifts, misaligned pointers and similar undefined behaviour, and
+executes \code{ud2} when a check fails. The trap lands in your \#UD handler from Phase~3, which prints the address;
+\code{addr2line -e build/kernel.elf <eip>} names the source line. Leave out two groups of files: the boot code that
+runs before \code{idt_init} (a trap there has no handler to land in) and the deliberate crash tests, which exist to
+misbehave. Run \code{make clean} when you switch between the two builds, so objects never mix.
+
+\begin{lst}{make}{Makefile (UBSan trap build)}
+ifeq ($(UBSAN),1)
+# boot code that runs before idt_init, and the tests that crash on purpose
+UBSAN_SKIP := kernel/kmain.c kernel/arch/i386/gdt.c kernel/arch/i386/idt.c tests/crash.c
+UBSAN_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(filter-out $(UBSAN_SKIP),$(C_SRCS)))
+$(UBSAN_OBJS): CFLAGS += -fsanitize=undefined -fsanitize-undefined-trap-on-error
+endif
+\end{lst}
+
+Finally, test the error paths. Out-of-memory almost never happens in a test run, so the code that handles it is never
+executed, and code that is never executed is wrong. Give \code{kmalloc} a test knob that makes the $N$-th call fail.
+Every caller must then return an error such as \code{-ENOMEM} (the convention above) and free what it had already
+taken; none may crash or leak.
+
+\begin{lst}{c}{kernel/mm/kmalloc.c (test mode)}
+static uint32_t kmalloc_calls, kmalloc_fail_at;       /* 0: never fail on purpose */
+
+void ktest_fail_nth_alloc(uint32_t n) { kmalloc_calls = 0; kmalloc_fail_at = n; }
+
+void *kmalloc(size_t size)
+{
+    if (kmalloc_fail_at && ++kmalloc_calls == kmalloc_fail_at)
+        return NULL;                                  /* the injected failure */
+    /* ... the size classes and the first-fit heap, as before ... */
+}
+\end{lst}
+Add a test-mode loop that counts the allocations of the whole suite once, then reruns the suite with $N$ set to each
+value from 1 to that count. A test that gets an error back and cleans up counts as passed in this mode; a panic, a
+hang or bytes left in use after the run fail it.
+\verify{CI is green on the default branch. A signed overflow introduced on purpose (\code{INT_MAX + x} with
+$x = 1$ at run time) makes \code{make test UBSAN=1} fail with a \#UD report at that line. With injection at every
+$N$ from 1 to the number of allocations in the suite, no test panics and the heap statistics end where they started.}
+
 \section{Testing and debugging}
 
 \begin{pitfalls}
@@ -330,6 +409,8 @@ Returned pointers are not 16-byte aligned & The header size, or a split size, is
 The heap keeps growing although usage is flat & Coalescing misses a case, so blocks fragment & \code{heap_check()} asserting ``no two adjacent free blocks'' finds it. \\
 List corruption after removing a block & A \code{prev} pointer not updated in split or coalesce & Assert \code{b->next->prev == b} in \code{heap_check()}. \\
 \code{make test} hangs forever & A test waits for a key, or the kernel crashed without reaching \code{qemu_exit} & The timeout catches it; make \code{panic} call \code{qemu_exit(1)} in test mode too. \\
+\#UD inside ordinary C code, only in the \code{UBSAN=1} build & A sanitizer check failed and executed \code{ud2} & Run \code{addr2line} on the EIP; the line holds the undefined behaviour (often a signed overflow or a shift by 32). \\
+A crash or a leak only under allocation-failure injection & A caller ignores \code{NULL} from \code{kmalloc}, or returns early without freeing what it already holds & Check every allocation; free in reverse order on the error path. \\
 \end{pitfalls}
 
 \begin{warnbox}[A rule for later phases]
@@ -348,6 +429,8 @@ Interrupt handlers should use memory allocated in advance.
   \item \code{kmalloc} serves requests up to 2\,KiB from slab caches, and \code{slabinfo} shows every cache empty after the tests.
   \item \code{list.h} is tested and ready for the scheduler.
   \item \code{make test} runs headless and fails loudly when any test fails.
+  \item CI runs the \code{-Werror} build, the host tests under the sanitizers and \code{make test} on every push, with the cross toolchain cached.
+  \item \code{make test UBSAN=1} passes, and every caller survives allocation-failure injection.
 \end{checklist}
 \end{milestonebox}
 

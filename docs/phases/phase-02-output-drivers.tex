@@ -182,12 +182,20 @@ prints \code{0x2badb002}.}
 
 \task{Compile C for the kernel}
 Extend the Makefile with a C rule. The flags say: freestanding (no hosted library assumptions), warnings on and
-treated seriously, debug info for GDB, and keep frame pointers for backtraces in Phase 3. Link through \code{gcc} so
+treated as errors, debug info for GDB, and keep frame pointers for backtraces in Phase 3. Link through \code{gcc} so
 that \code{libgcc} is available; GCC sometimes emits calls into it (64-bit division, for example).
+
+The extra warnings each close one class of bug while the kernel is still small enough to fix every warning in an
+evening. \code{-Wformat=2} checks every format string against its arguments, \code{-Wshadow} catches a local that
+hides a global of the same name, \code{-Wvla} forbids variable-length arrays (a length from outside can push one
+past the end of a 16\,KiB kernel stack), and \code{-Wstrict-prototypes} rejects \code{void f()}, which in C means
+``any arguments'' rather than ``none''. \code{-Werror} makes them stick: a warning you may ignore is one you will
+ignore.
 
 \begin{lst}{make}{Makefile (additions)}
 CC      := i686-elf-gcc
-CFLAGS  := -std=gnu11 -ffreestanding -O2 -g -Wall -Wextra -fno-omit-frame-pointer -Iinclude
+CFLAGS  := -std=gnu11 -ffreestanding -O2 -g -Wall -Wextra -fno-omit-frame-pointer -Iinclude \
+           -Werror -Wformat=2 -Wshadow -Wvla -Wstrict-prototypes
 LDFLAGS := -T link.ld -ffreestanding -nostdlib
 C_SRCS  := $(wildcard kernel/*.c kernel/drivers/*.c lib/*.c)
 OBJS    := $(BUILD)/boot/loader.o $(patsubst %.c,$(BUILD)/%.o,$(C_SRCS))
@@ -303,8 +311,17 @@ Write \code{lib/printf.c} with \code{kvprintf(void (*putc)(char), const char *fm
 \texttt{\%x}, \texttt{\%p} and \texttt{\%\%}, plus zero-padding with a width (\texttt{\%08x}), which makes addresses readable. Use
 \code{utoa} and \code{itoa} from Phase 0.
 
+Declare \code{kprintf} with GCC's \code{format} attribute. GCC then checks every call the way it checks
+\code{printf}: \texttt{kprintf("\%s", 42)} stops the build instead of printing memory at address 42. One surprise
+follows. On \code{i686-elf}, \code{uint32_t} is \code{unsigned long}, not \code{unsigned int}, so GCC wants
+\texttt{\%lx} and \texttt{\%lu} for it. Accept the \code{l} modifier in \code{kvprintf} and treat it like no modifier,
+since both types are 32 bits here.
+
 \begin{lst}{c}{lib/printf.c (skeleton)}
 #include <stdarg.h>
+
+/* in include/kprintf.h: argument 1 is the format, checking starts at argument 2 */
+void kprintf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 void kprintf(const char *fmt, ...)
 {
@@ -325,7 +342,8 @@ can define \code{pr_fmt} to prefix its messages with the subsystem's name.
 enum { LOG_ERR = 3, LOG_WARN = 4, LOG_INFO = 6, LOG_DEBUG = 7 };    /* Linux's numbers */
 extern int console_loglevel;            /* messages with level <= this reach the console */
 
-void klog(int level, const char *fmt, ...);   /* always into log_buf, maybe to the console */
+void klog(int level, const char *fmt, ...)    /* always into log_buf, maybe to the console */
+    __attribute__((format(printf, 2, 3)));
 
 #ifndef pr_fmt
 #define pr_fmt(fmt) fmt                 /* e.g. #define pr_fmt(fmt) "pmm: " fmt */
@@ -341,7 +359,9 @@ must print even if the log code is broken.
 \verify{Write a test that prints \code{0}, \code{-1}, \code{INT_MIN}, \code{0xFFFFFFFF} with \texttt{\%u} and \texttt{\%x},
 \texttt{\%08x} of \code{0xB8000}, a \code{NULL} string (print \code{(null)}), and \texttt{\%\%}. Compare with what the same
 format string gives in a Linux test program. With \code{console_loglevel} set to \code{LOG_INFO}, a \code{pr_debug} line
-stays off the screen but is present in \code{log_buf}, and writing more than 16\,KiB of messages keeps the newest ones.}
+stays off the screen but is present in \code{log_buf}, and writing more than 16\,KiB of messages keeps the newest ones.
+Finally, add \texttt{kprintf("\%s\textbackslash n", 42);} to \code{kmain}: \code{make} must fail with a \code{-Wformat}
+error. Remove the line again.}
 
 \task{panic and ASSERT}
 When the kernel detects something impossible, it must stop loudly instead of continuing with corrupt state.
@@ -350,11 +370,42 @@ condition is false. Use \code{ASSERT} generously from now on; it is the cheapest
 
 \begin{lst}{c}{include/panic.h}
 #pragma once
-void panic_at(const char *file, int line, const char *fmt, ...) __attribute__((noreturn));
+void panic_at(const char *file, int line, const char *fmt, ...)
+    __attribute__((noreturn, format(printf, 3, 4)));
 
 #define panic(...)  panic_at(__FILE__, __LINE__, __VA_ARGS__)
 #define ASSERT(cond) \
     do { if (!(cond)) panic("assertion failed: %s", #cond); } while (0)
+\end{lst}
+
+\code{panic} is for broken invariants: states your own code should never reach. It is never the answer to bad
+input. A wrong argument from a caller, a full table or a failed allocation is an ordinary error, returned as a
+negative \code{errno} value such as \code{-EINVAL} or \code{-ENOMEM}. From Phase 10 on, a user program decides what
+reaches the kernel, and a kernel that panics on bad input lets any program switch it off. Write that policy down now,
+together with a short list of coding rules taken from the SEI CERT C standard, as a second section of
+\code{docs/security/threat-model.md}. Each rule names its CERT identifier so you can look it up.
+
+\begin{lst}{plain}{docs/security/threat-model.md (second section)}
+## Coding rules
+
+Errors: return a negative errno (-EINVAL, -ENOMEM); 0 or a positive
+value means success. Never ignore a return value: allocators carry
+__attribute__((warn_unused_result)). panic() only for broken
+invariants, never because of input from outside.     (ERR33-C)
+
+INT30-C, INT32-C  sizes and offsets from outside go through
+                  lib/checked.h; no -fwrapv as a substitute
+ARR30-C           no index without a bound check
+STR31-C, STR32-C  strings from outside are bounded and always
+                  NUL-terminated
+MEM30-C, MEM31-C  every allocation is checked; a freed pointer
+                  is never used again
+EXP33-C           no reads of uninitialised memory; zero a struct
+                  before it leaves the kernel
+INT31-C, INT34-C  explicit widths (uint32_t); shift counts stay
+                  below the width of the type
+FIO30-C           format strings are literals; -Wformat=2 -Werror
+CON               shared data has a lock; no lock held across sleep
 \end{lst}
 
 \task{Read the Multiboot information}
@@ -392,6 +443,8 @@ Linker: \code{undefined reference to __stack_chk_fail} & Host compiler with the 
 Nothing appears on screen, no crash & Missing \code{volatile}, so the optimiser removed the stores & Declare the buffer pointer as \code{volatile uint16_t *}. \\
 Serial output is garbled or missing & Wrong divisor or line settings, or not waiting for the transmitter & Re-check the register sequence; poll bit 5 of the line status register. \\
 \texttt{\%d} prints wrong values for negative numbers & Converting \code{INT_MIN} by negating an \code{int} overflows & Negate into an \code{unsigned} before converting. \\
+Build fails: \texttt{\%x} \code{expects argument of type unsigned int} on a \code{uint32_t} & On \code{i686-elf}, \code{uint32_t} is \code{unsigned long} & Use \texttt{\%lx} and \texttt{\%lu}, which \code{kvprintf} accepts (Task~2.7). \\
+Build fails: \code{function declaration isn't a prototype} & \code{-Wstrict-prototypes} and a declaration like \code{void vga_clear()} & Write \code{void vga_clear(void)}. \\
 \end{pitfalls}
 
 \section{Milestone}
@@ -403,6 +456,8 @@ Serial output is garbled or missing & Wrong divisor or line settings, or not wai
   \item The same messages appear in your terminal through the serial port.
   \item \code{kprintf} passes the edge-case tests; \code{panic} and \code{ASSERT} print file and line and halt.
   \item The Makefile builds C and assembly, links with \code{libgcc}, and \code{make run} opens serial on stdio.
+  \item The kernel builds without a single warning under \code{-Werror}, and a wrong format string stops the build.
+  \item The coding rules and the error policy are committed in \code{docs/security/threat-model.md}.
 \end{checklist}
 \end{milestonebox}
 

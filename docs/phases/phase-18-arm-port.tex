@@ -812,7 +812,8 @@ encoded differently, \code{TG0} = \code{0b00} but \code{TG1} = \code{0b10} for 4
 The boot table maps far too much. In C, build the real kernel tables: the direct map with 2\,MiB blocks covering only
 the RAM listed in \code{/memory}, the kernel image with 4\,KiB pages so that \code{.text} is read-only and
 \code{.rodata} not executable (Phase 15's hardening), and each device the FDT names as a Device page at
-\code{P2V(base)}. Load them into \code{TTBR1_EL1}, flush the whole TLB, and give \code{TTBR0_EL1} an empty table for
+\code{P2V(base)}. Keep \code{PXN} and \code{UXN} on every direct-map block and every data page, so the only kernel
+pages EL1 may execute are those of \code{.text}, and no page is both writable and executable. Load them into \code{TTBR1_EL1}, flush the whole TLB, and give \code{TTBR0_EL1} an empty table for
 kernel threads. The header of the new memory layout:
 
 \begin{lst}{c}{kernel/arch/aarch64/include/arch/memlayout.h}
@@ -884,8 +885,20 @@ A new mapping needs no TLB flush, because the TLBs never hold entries that fault
 \code{arch_mmu_unmap} change live entries and must call \code{arch_tlb_flush}. \code{arch_mmu_switch} writes
 \code{TTBR0_EL1}, executes \code{isb}, and, since Turk-OS uses no ASIDs yet, flushes the TLB with
 \code{tlbi vmalle1}, \code{dsb ish} and \code{isb}. Two more differences from x86 and RISC-V: Armv8.0 has no
-equivalent of \code{sstatus.SUM}, so \code{copy_from_user} reads user pages directly (Armv8.1's PAN would forbid it),
-and its range check now ends at \code{USER_TOP}. Finally fill in the fault description for the generic handler:
+equivalent of \code{sstatus.SUM}, so with \code{arch_uaccess_begin} and \code{arch_uaccess_end} empty,
+\code{copy_from_user} reads user pages directly, and its range check now ends at \code{USER_TOP}.
+
+Armv8.1 adds \textbf{PAN} (Privileged Access Never), the ARM counterpart of SMAP and of a clear SUM: while
+\code{PSTATE.PAN} is 1, an EL1 load or store to an EL0-accessible page faults. It is optional, and worth the few lines
+when the CPU has it (\code{ID_AA64MMFR1_EL1}, bits 23:20, non-zero; QEMU's \code{-cpu max} does, \code{cortex-a72}
+doesn't). Clear \code{SCTLR_EL1.SPAN} (bit 23), so every exception taken to EL1 sets PAN, and set it once at boot. Then
+choose one of two ways for uaccess. Either the hooks toggle PAN, \code{msr s3_0_c4_c2_3, xzr} (the PAN register by its
+generic name, so the assembler needs no \code{-march=armv8.1-a}) before the copy and writing \code{1 << 22} back after
+it, or the copy loops use \code{LDTR} and \code{STTR}, the unprivileged loads and stores. PAN doesn't block those,
+because they are checked with EL0's permissions, so a kernel address passed as a user pointer faults even if the range
+check missed it. Either way, any other EL1 access to user memory becomes a permission fault.
+
+Finally fill in the fault description for the generic handler:
 
 \begin{lst}{c}{kernel/arch/aarch64/trap.c (page faults)}
 void arch_fault_info(const struct trapframe *tf, struct fault_info *fi)
@@ -902,7 +915,8 @@ void arch_fault_info(const struct trapframe *tf, struct fault_info *fi)
 \verify{The kernel prints from its high-half address (\code{0xFFFFFF80402...} in a backtrace); the Phase 6 fault tests
 pass: a write to \code{.text} is a permission fault at level 3 (fault status \code{0x0F}), an unmapped address a
 translation fault (\code{0x04}--\code{0x07}, by the level where the walk stopped); and your own \code{pagetable}
-monitor command shows Device attributes only on device pages.}
+monitor command shows Device attributes only on device pages and \code{PXN} clear only on \code{.text}. With
+\code{-cpu max} and PAN on, a kernel read of a user pointer outside uaccess is a permission fault.}
 
 \task{Sixty-four bits everywhere}
 Task 16.9 made the generic code compile cleanly for aarch64, but compiling is not running. This is the first time
@@ -930,8 +944,10 @@ The ELF loader learns the 64-bit structures and accepts \code{ELFCLASS64} (2 in 
 offsets, addresses and sizes grow to 64 bits, and in the program header \code{p_flags} moves up to sit right after
 \code{p_type}. Check both sizes with \code{_Static_assert}. \code{paddr_t} was already 64 bits since Task 16.7; AArch64 is where that matters.
 
-\verify{The Phase 10 evil programs, rebuilt for AArch64, behave as listed in Task~10.9, with one more case: a
-\code{write} whose buffer lies at \code{0x0000008000000000} (just past \code{USER_TOP}) returns \code{-EFAULT}.}
+\verify{The evil programs, rebuilt for AArch64, behave as listed in Task~10.9 and as on RISC-V: \code{ro_read} returns
+\code{-EFAULT}, \code{lazy_read} succeeds, \code{cow_read}'s data is seen only by the reader, and \code{nxdata} dies of
+an instruction abort from EL0 (\code{UXN}). One more case is new: a \code{write} whose buffer lies at
+\code{0x0000008000000000} (just past \code{USER_TOP}) returns \code{-EFAULT}.}
 
 \task{Tasks and locks}
 \code{arch_switch} saves only what the AAPCS64 makes callee-saved: \code{x19}--\code{x28}, the frame pointer and the
@@ -1116,7 +1132,8 @@ _Noreturn void arch_test_exit(int failed)
 \end{lst}
 \verify{\code{make ARCH=aarch64 run} boots to \code{turk@os:/$} with the root on virtio-blk; \code{make ARCH=aarch64
 test} prints every result and \code{ALL TESTS PASSED}, and breaking one test makes QEMU exit with status 1. The Phase
-15 fuzzer runs for an hour without a kernel panic.}
+15 fuzzer runs for an hour without a kernel panic, and the CI matrix of Task~16.11, now with \code{aarch64}, runs the
+evil programs and a short fuzzer run green on all three architectures.}
 
 \task{Turk-OS 2.0}
 Now bring the three architectures together. TurkFS has no endianness or word-size problem: all three targets are
@@ -1238,7 +1255,8 @@ No output on the Raspberry Pi & PL011 not on the header pins, wrong UART clock, 
   \item GICv2, the virtual timer at 100\,Hz from \code{CNTFRQ_EL0}, and PL011 receive interrupts work; the monitor runs over serial.
   \item The MMU runs with \code{TTBR1_EL1} for the kernel and \code{TTBR0_EL1} per process, Device and Normal memory, and copy-on-write.
   \item ELF64 programs run at EL0 with \code{svc} system calls and the Linux i386 numbers; the evil programs are contained.
-  \item \code{make ARCH=aarch64 test} passes through semihosting, and the fuzzer runs for an hour without a panic.
+  \item \code{PXN}/\code{UXN} keep every page writable or executable, never both: a write to kernel text and an execute from a user data page both fault. PAN is on when the CPU has it (optional).
+  \item \code{make ARCH=aarch64 test} passes through semihosting, the evil programs and the fuzzer pass on AArch64 in CI, and the fuzzer runs for an hour without a panic.
   \item One TurkFS image is written and read on all three architectures and passes \code{fsck.minix -f}.
   \item \code{make release-all} works from a clean clone, the benchmark table and the porting chapter are written, and \code{v2.0} is tagged.
 \end{checklist}

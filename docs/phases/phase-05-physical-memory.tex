@@ -138,7 +138,7 @@ void print_memory_map(const struct multiboot_info *mbi)
     uintptr_t end = mbi->mmap_addr + mbi->mmap_length;
     while (p < end) {
         const struct mmap_entry *e = (const struct mmap_entry *)p;
-        kprintf("  %08x%08x  len %08x%08x  type %u\n",
+        kprintf("  %08lx%08lx  len %08lx%08lx  type %lu\n",
                 (uint32_t)(e->base >> 32), (uint32_t)e->base,
                 (uint32_t)(e->length >> 32), (uint32_t)e->length, e->type);
         p += e->size + sizeof(e->size);
@@ -164,7 +164,7 @@ SECTIONS
 
 \begin{lst}{c}{kernel/mm/pmm.c}
 extern char kernel_start[], kernel_end[];     /* addresses only: never read them */
-kprintf("kernel: %p - %p (%u KiB)\n", kernel_start, kernel_end,
+kprintf("kernel: %p - %p (%lu KiB)\n", kernel_start, kernel_end,
         (uint32_t)(kernel_end - kernel_start) / 1024);
 \end{lst}
 
@@ -214,6 +214,50 @@ void pmm_free_frame(uintptr_t paddr)
     nfree++;
 }
 \end{lst}
+Steps three and four deserve their own function, because the memory map is input the kernel did not write. Firmware
+tables have bugs, and nothing stops an entry from claiming the kernel image is free RAM. In fact GRUB's map always
+does: the kernel sits inside the large usable region above 1\,MiB. So treat every entry with suspicion. Skip an
+entry whose \code{size} is too small to hold the fields, an empty one, and
+one whose \code{base + length} wraps past $2^{64}$. Clip the rest to the frames the bitmap covers, at most 4\,GiB.
+Then reserve the kernel image, the bitmap, the Multiboot structures and the low 1\,MiB again, whatever the map said
+about them. Because the function writes into a bitmap you pass in, a test can run it on a made-up map without
+touching the real allocator.
+
+\begin{lst}{c}{kernel/mm/pmm.c (applying the memory map)}
+struct range { uint64_t start, end; };              /* physical, [start, end) */
+
+/* Free the usable frames of a memory map in bm, then reserve every range in keep[].
+   pmm_init passes the real map; the tests pass a made-up one and a scratch bitmap. */
+void pmm_apply_map(uint32_t *bm, size_t nframes, uintptr_t map, uint32_t map_len,
+                   const struct range *keep, size_t nkeep)
+{
+    const uint64_t limit = (uint64_t)nframes * PAGE_SIZE;     /* at most 4 GiB */
+    uintptr_t p = map;
+
+    while (p + sizeof(struct mmap_entry) <= map + map_len) {
+        const struct mmap_entry *e = (const struct mmap_entry *)p;
+        if (e->size < sizeof(*e) - sizeof(e->size))
+            break;                                  /* corrupt entry: stop the walk     */
+        p += e->size + sizeof(e->size);
+        uint64_t end = e->base + e->length;
+        if (e->type != 1 || e->length == 0 || end < e->base)
+            continue;                               /* not RAM, empty, or wraps: reject */
+        if (end > limit)
+            end = limit;                            /* clip to what the bitmap covers   */
+        if (e->base >= end)
+            continue;
+        for (uint64_t f = (e->base + PAGE_SIZE - 1) / PAGE_SIZE; f < end / PAGE_SIZE; f++)
+            bitmap_clear(bm, (size_t)f);
+    }
+    for (size_t i = 0; i < nkeep; i++)              /* kernel, bitmap, Multiboot, low 1 MiB */
+        for (uint64_t f = keep[i].start / PAGE_SIZE;
+             f < (keep[i].end + PAGE_SIZE - 1) / PAGE_SIZE && f < nframes; f++)
+            bitmap_set(bm, (size_t)f);
+}
+\end{lst}
+\code{pmm_init} marks the whole bitmap used, calls \code{pmm_apply_map}, and then counts the clear bits to set
+\code{nfree}.
+
 \verify{After \code{pmm_init}, print total and free frames. The free count should equal the usable RAM above
 the bitmap minus the Multiboot structures, give or take a few frames. \code{pmm_alloc_frame()} never returns an
 address inside the kernel.}
@@ -221,7 +265,7 @@ address inside the kernel.}
 \task{A tiny test framework}
 Write \code{KTEST(name)} and \code{KASSERT(cond)} macros and a \code{test} monitor command that runs every
 registered test and prints \code{PASS} or \code{FAIL} with the failing line. A simple way to register tests is an
-array of \code{\{name, function\}} pairs in \code{tests/tests.c}; a neater way is to put a pointer to each test in a
+array of \code{{name, function}} pairs in \code{tests/tests.c}; a neater way is to put a pointer to each test in a
 dedicated linker section and walk it from \code{__start_ktests} to \code{__stop_ktests}. Phase 7 connects this to
 \code{make test} so it runs without you.
 
@@ -240,6 +284,7 @@ Write at least these tests. Each one should leave the free count exactly where i
 \code{never_kernel} & during \code{exhaust}, check that no frame overlaps \code{[kernel_start, kernel_end)} or the bitmap \\
 \code{contiguous} & \code{pmm_alloc_frames(16)} returns 16 adjacent frames; free them one by one \\
 \code{random_pattern} & 10\,000 random alloc/free steps against a shadow array; counts must match at every step \\
+\code{bad_map} & run \code{pmm_apply_map} on a scratch bitmap with a made-up map: one usable entry covering the kernel image, one covering the Multiboot information, and one whose base plus length wraps past $2^{64}$; afterwards no frame of the kernel image or the Multiboot data is free, and the wrapping entry freed nothing \\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -313,7 +358,8 @@ Keep all address arithmetic in the PMM explicit about which kind of address it i
   \item The memory map is printed at boot, and \code{mem} shows totals that match QEMU's \code{-m}.
   \item \code{kernel_start} and \code{kernel_end} come from the linker script.
   \item \code{pmm_alloc_frame}, \code{pmm_free_frame} and \code{pmm_alloc_frames} work, with asserts for alignment and double frees.
-  \item All six PMM tests pass from 16\,MiB to 3\,GiB of RAM.
+  \item All seven PMM tests pass from 16\,MiB to 3\,GiB of RAM.
+  \item Memory-map entries are validated: corrupt, empty and wrapping entries are rejected, the rest clipped, and the kernel and Multiboot data stay reserved (\code{bad_map}).
   \item The buddy allocator replaces the bitmap behind the same interface and passes the same tests; freeing everything restores the original free lists.
   \item The \code{test} command runs every registered test and reports the results.
 \end{checklist}

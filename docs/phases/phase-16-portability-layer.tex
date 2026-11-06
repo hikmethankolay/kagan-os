@@ -426,10 +426,11 @@ the top of the child's kernel stack, sets \code{child->tf} to it, calls \code{tf
 \code{arch_return_to_user(tf)}. The child starts as an ordinary kernel task whose first function returns to user mode.
 
 The page-fault handler gets the same treatment: \code{arch_fault_info} fills a \code{struct fault_info} from CR2 and
-the error code, and generic code decides what to do (Task~16.7). \code{exec} stays false on x86, because the error
-code reports instruction fetches only with NX or SMEP, which Turk-OS doesn't use.
+the error code, and generic code decides what to do (Task~16.7). \code{exec} copies the error code's
+instruction-fetch bit, which x86 sets only with NX or with SMEP enabled (Task~15.3); on a CPU without SMEP it stays
+false.
 \verify{\code{grep -rnE -- '->(eax|ebx|eip|cs|useresp)' kernel lib --include='*.c' | grep -v '^kernel/arch/'} finds
-nothing. The \code{fork_values} test and all seven evil programs of Task~10.9 behave as before.}
+nothing. The \code{fork_values} test and all the evil programs of Task~10.9 behave as before.}
 
 \task{Boot information without Multiboot}
 Generic code must stop reading the Multiboot structure. Define what the kernel learns at boot, whatever the firmware,
@@ -504,9 +505,22 @@ static bool cow_fault(struct addrspace *as, uintptr_t va)    /* va: page-aligned
 tries \code{cow_fault} for a write to a present page below \code{KERNEL_BASE}, then Phase~11's lazy heap and stack
 growth for a page that isn't present. Only then does it print the report (address, access, mode, \code{tf_pc(tf)}) and
 send \code{SIGSEGV}, or panic for a fault in the kernel.
+
+The uaccess contract of Phases 10 and 11 belongs to the same generic code, so that every port inherits it instead of
+rewriting it. \code{kernel/syscall/uaccess.c} keeps \code{copy_from_user}, \code{copy_to_user},
+\code{strncpy_from_user} and \code{fault_in_user_page}; they look pages up with \code{arch_mmu_lookup} and generic
+\code{VM_} flags, resolve lazy and copy-on-write pages through the same functions as \code{page_fault}, and still
+reject a write to a page without \code{VM_WRITE} or \code{VM_COW} with \code{-EFAULT}. The only machine-specific part
+is a pair of hooks around the copy itself, \code{arch_uaccess_begin()} and \code{arch_uaccess_end()} in
+\code{<arch/uaccess.h>}: empty on x86, or \code{stac} and \code{clac} if you enabled SMAP in Task~15.3. Phases 17 and
+18 fill them in for their own user-access switches. The evil programs go the same way: those that only pass bad
+arguments to system calls (\code{badptr}, \code{hugelen}, \code{ro_read}, \code{lazy_read}, \code{cow_read} and the
+rest) become plain C in \code{user/test/}, and the few that need a machine instruction or a kernel address
+(\code{cli}, \code{kpeek}, \code{badsys}) get a short body per architecture in \code{user/arch/$(ARCH)/}.
 \verify{\code{grep -rnE 'pde_t|PG_[A-Z]|invlpg|cr3' kernel lib include | grep -v '^kernel/arch/i386/'} finds
 nothing. The Phase~6 VMM tests, \code{cow_frames} and the \code{brk} test pass, and \code{crash null} still prints a
-decoded report.}
+decoded report. \code{make test ARCH=i386} still passes with uaccess and the evil programs in their generic places,
+including \code{ro_read}, \code{lazy_read} and \code{cow_read}.}
 
 \task{Consoles and input that any board can provide}
 Phase~2's console layer called the VGA and serial drivers by name. Make it a registry, and give input one entry point:
@@ -557,8 +571,12 @@ connects the UART's interrupt line to the PIC on a PC), unmask IRQ~4, and call \
 the terminal reach \code{tsh} through IRQ~4, with editing and Ctrl+C working as on the PS/2 keyboard.}
 
 \task{Make the generic code 64-bit clean}
-Compile with \code{-Wall -Wextra -Wformat=2}, and mark \code{kprintf} with
-\code{__attribute__((format(printf, 1, 2)))} so every format string is checked. GCC warns about casts between pointers
+The i386 kernel has been built with \code{-Wall -Wextra -Wformat=2 -Werror} and a format-checked \code{kprintf}
+(\code{__attribute__((format(printf, 1, 2)))}) since Phase~2; now the same checks run with all three compilers. The
+fixed-width types differ between them: \code{uint32_t} is \code{unsigned long} on \code{i686-elf} and
+\code{riscv32-elf} but \code{unsigned int} on \code{aarch64-elf}, so no single conversion fits it everywhere. In
+generic code, cast a fixed-width value to \code{unsigned long} and print it with \texttt{\%lx} or \texttt{\%lu}, and
+print a \code{uint64_t} as \code{unsigned long long} with \texttt{\%llx}. GCC warns about casts between pointers
 and integers of a different size by default (\code{-Wpointer-to-int-cast}, \code{-Wint-to-pointer-cast}). Teach
 \code{kvprintf} the \code{l}, \code{ll} and \code{z} modifiers (\texttt{\%lx}, \texttt{\%llx}, \texttt{\%zu}). Fix what
 the warnings show with the rules of the concepts section, and watch plain \code{char}: \code{if (c < 0)} is always
@@ -660,6 +678,13 @@ size 128\,MiB (QEMU's default \code{-m}); the first \code{ns16550a} node has bas
 (its memory node, the PL011, the timer). Finally, try to break the parser: flip a byte of the magic, make
 \code{off_dt_struct} plus \code{size_dt_struct} point past \code{totalsize}, set a property's length to
 \code{0xFFFFFFF0}. Each must give an error, never a crash or an endless loop.
+
+The blob is a new input from firmware, and the ports bring more. Add them to \code{docs/security/threat-model.md}
+before you write the code that trusts them. The devicetree crosses the firmware-to-kernel boundary, so it is parsed
+like a disk image, never trusted. OpenSBI runs in M-mode below the RISC-V kernel and sees all of memory, so it is part
+of the TCB, like the BIOS and GRUB on x86, and its source and version belong in the toolchain record. Virtio devices
+read and write guest-physical memory by DMA, wherever their descriptors point, and nothing stops a malicious device
+from writing anywhere. QEMU's devices are trusted, and DMA isolation with an IOMMU stays out of scope; write both down.
 \verify{The host tests pass on both blobs under the address and undefined-behaviour sanitizers, the corrupted blobs
 are rejected, and \code{lib/fdt.c} also compiles in \code{make check-generic}.}
 
@@ -700,9 +725,15 @@ TEST_PASS_STATUS := 1
 Do the same for user space: \code{crt0.s} and the system call stubs move to \code{user/arch/i386/}, and user programs
 get their own flags without \code{-Ikernel}. Phases 17 and 18 add the \code{arch.mk} files for \code{riscv32-elf-}
 and \code{aarch64-elf-}; until then \code{make ARCH=riscv32} stops with the error.
+
+Teach CI the same variable. The job of Phase~7 becomes a matrix over \code{ARCH}, with one entry that runs
+\code{make test} with that \code{ARCH}, the evil programs and a short fuzzer run for each architecture that has an
+\code{arch.mk}, and one that runs \code{make check-generic} and the host tests. Today the matrix has only
+\code{i386}; Phases 17 and 18 add \code{riscv32} and \code{aarch64}, and their cross compilers join the cached
+toolchain.
 \verify{\code{make} and \code{make ARCH=i386} build the same \code{build/i386/kernel.elf}; \code{make ARCH=i386 run},
 \code{debug} and \code{test} work; \code{make ARCH=sparc} prints the error; nothing is written to \code{build/} outside
-\code{build/i386/} and \code{build/check/}.}
+\code{build/i386/} and \code{build/check/}. The CI matrix is green for \code{i386} and for \code{check-generic}.}
 
 \task{Prove that nothing broke}
 A refactoring is finished when the behaviour is provably the same. Run Phase~15's safety net against the new tree
@@ -740,6 +771,8 @@ Benchmarks several per cent slower & Accessors became function calls, or \code{a
         Task~16.2 find nothing outside \code{kernel/arch/i386}.
   \item \code{make ARCH=i386 test} passes; ten minutes of fuzzing cause no panic; the benchmarks are within a few
         per cent of Phase~15.
+  \item uaccess and the evil programs live in generic code behind \code{arch_uaccess_begin}/\code{end}; CI runs a
+        matrix over \code{ARCH}; the threat model covers the devicetree, OpenSBI and virtio DMA.
   \item \code{make check-generic} compiles every generic file for \code{riscv32} and \code{aarch64} without warnings.
   \item The FDT parser passes its host tests on both QEMU blobs under the sanitizers.
   \item \code{include/arch.h}, the trap frame accessors, \code{struct bootinfo}, \code{arch_mmu_*},

@@ -238,10 +238,29 @@ rest of this section in the **same terminal**, because the variables above only 
 
 ### 3.2 Get the sources
 
+Download each archive together with its `.sig` file, and check the signature before you unpack anything. A tampered
+compiler can put anything into every kernel you build, and you would never see it in your own source. GNU signs its
+releases; `gnu-keyring.gpg` holds the maintainers' public keys. `gpg` comes with every Linux distribution (on macOS,
+`brew install gnupg`).
+
 ```sh
 mkdir -p ~/src && cd ~/src
+curl -LO https://ftp.gnu.org/gnu/gnu-keyring.gpg
+gpg --import gnu-keyring.gpg
 curl -LO https://ftp.gnu.org/gnu/binutils/binutils-$BINUTILS_VERSION.tar.xz
+curl -LO https://ftp.gnu.org/gnu/binutils/binutils-$BINUTILS_VERSION.tar.xz.sig
 curl -LO https://ftp.gnu.org/gnu/gcc/gcc-$GCC_VERSION/gcc-$GCC_VERSION.tar.xz
+curl -LO https://ftp.gnu.org/gnu/gcc/gcc-$GCC_VERSION/gcc-$GCC_VERSION.tar.xz.sig
+gpg --verify binutils-$BINUTILS_VERSION.tar.xz.sig binutils-$BINUTILS_VERSION.tar.xz
+gpg --verify gcc-$GCC_VERSION.tar.xz.sig gcc-$GCC_VERSION.tar.xz
+```
+
+Each `gpg --verify` must print `Good signature from` followed by a GNU maintainer's name. A warning that the key
+"is not certified with a trusted signature" is normal: it only means you have not signed that key yourself. If you
+see `BAD signature`, or `No public key`, stop: delete the archive and download it again, or import the keyring
+again. Save the output in your lab journal. Only then unpack:
+
+```sh
 tar xf binutils-$BINUTILS_VERSION.tar.xz
 tar xf gcc-$GCC_VERSION.tar.xz
 ```
@@ -279,6 +298,21 @@ echo 'export PATH="$HOME/opt/cross/bin:$PATH"' >> ~/.bashrc     # ~/.zshrc if yo
 ```
 
 Open a new terminal so the change takes effect. The folders in `~/src` can be deleted afterwards.
+
+### 3.6 Record the versions
+
+Write the versions of every tool the build depends on into `docs/toolchain.lock` in your Turk-OS repository and
+commit it. It is a plain text file that says which tools this tree is built and tested with, so when a build breaks
+after an upgrade you can see what changed. Run this from the repository root (use `grub-mkrescue` if your
+distribution names it that way, see section 4):
+
+```sh
+{ i686-elf-gcc --version | head -n1; i686-elf-ld --version | head -n1
+  nasm -v; qemu-system-i386 --version | head -n1
+  grub2-mkrescue --version; } > docs/toolchain.lock
+```
+
+Update the file whenever you rebuild a cross compiler or your distribution upgrades QEMU, NASM or GRUB.
 
 ### If the cross build fails
 
@@ -588,7 +622,7 @@ Give each target its own build folders. Each target takes about as long as the `
 little longer, because GCC builds `libgcc` several times, once for each common combination of RISC-V extensions.
 
 Set the variables from step 3.1 again (all except `TARGET`). If `~/src` no longer has the two source folders, get
-them again with step 3.2.
+them again with step 3.2, including the two `gpg --verify` checks.
 
 ```sh
 export BINUTILS_VERSION=2.47
@@ -647,7 +681,12 @@ AArch64 needs no extra options. The default is 64-bit code with the LP64 ABI (`l
 Makefile passes, not build options.
 
 On Linux and WSL2, `~/opt/cross/bin` is already on your `PATH` from step 3.5, so both compilers work in every new
-terminal.
+terminal. Add both compilers and the two new QEMU binaries to `docs/toolchain.lock` (step 3.6):
+
+```sh
+{ riscv32-elf-gcc --version | head -n1; aarch64-elf-gcc --version | head -n1
+  qemu-system-riscv32 --version | head -n1; qemu-system-aarch64 --version | head -n1; } >> docs/toolchain.lock
+```
 
 **On macOS** (`riscv32-elf` only), four things differ:
 

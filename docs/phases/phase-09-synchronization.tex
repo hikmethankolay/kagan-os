@@ -183,7 +183,14 @@ void spin_unlock(spinlock_t *l)
     __atomic_store_n(&l->locked, 0, __ATOMIC_RELEASE);
     irq_restore(flags);
 }
+
+#define ASSERT_HELD(l) ASSERT((l)->locked && (l)->owner == current)
 \end{lst}
+The owner field buys you one more check. Many functions are only correct when their caller already holds a lock:
+\code{make_ready} touches the run queue, a helper that unlinks a buffer touches the cache's lists. A comment saying
+``caller holds \code{sched_lock}'' is easy to ignore, so make the first line of such a function
+\code{ASSERT_HELD(&sched_lock)}. A caller that forgot the lock now panics on the first call, instead of corrupting a
+list once a week. Mutexes get the same macro over their owner field.
 \verify{Taking the same lock twice panics with the lock's name. Releasing locks in the reverse order they were
 taken restores the original interrupt state at every level.}
 
@@ -275,8 +282,11 @@ Add these to \code{make test}. Each one should run long enough (a few seconds) t
 \bottomrule
 \end{tabularx}
 \end{center}
+The helpers these tests use to touch shared state, such as the bounded buffer's put and get, start with
+\code{ASSERT_HELD}, like the kernel functions they imitate.
 \verify{All four tests pass repeatedly. The unlocked version of \code{race_counter} fails, which proves the test
-can see races.}
+can see races. Remove the \code{spin_lock} before one call to the bounded buffer's put helper, and its
+\code{ASSERT_HELD} fires on the first call.}
 
 \task{Audit the kernel and write the lock order}
 Go through every shared structure you have built and give it an owner. Write the result into a comment block in
@@ -314,7 +324,7 @@ static inline void refcount_inc(refcount_t *r)
 {
     unsigned long f = irq_save();               /* one CPU: masking interrupts is enough */
     if (r->refs == 0 || r->refs >= REFCOUNT_SATURATED) {
-        pr_warn("refcount: inc on %u at %p\n", r->refs, r);
+        pr_warn("refcount: inc on %lu at %p\n", r->refs, r);
         r->refs = REFCOUNT_SATURATED;           /* never free this object */
     } else {
         r->refs++;
@@ -366,8 +376,11 @@ void lockcheck_release(struct spinlock *l)
 \end{lst}
 Mutexes need the same check, but their holder can sleep: keep the held-lock stack in \code{struct task} instead of a
 global array once mutexes take part.
+Run the suite this way in CI as well: add a step \code{make clean && make test LOCK_DEBUG=1} to the Phase~7 workflow (the Makefile turns the variable
+into \code{-DLOCK_DEBUG}), so the classic
+problems and every other test run under the lock-order checker on every push.
 \verify{A test that takes \code{heap_lock} and then \code{sched_lock} panics with both names in debug builds; the whole
-\code{make test} suite runs with \code{LOCK_DEBUG} enabled and reports no violation.}
+\code{make test} suite runs with \code{LOCK_DEBUG} enabled, in CI as well as locally, and reports no violation.}
 
 \section{Testing and debugging}
 
@@ -394,6 +407,7 @@ Occasional hang under load & Two locks taken in opposite orders & Follow the loc
   \item Bounded buffer, philosophers and ping-pong tests pass repeatedly in \code{make test}.
   \item The keyboard driver blocks the reader on a semaphore; no busy waiting remains in the kernel.
   \item Every shared structure has a documented lock, the lock order is written down, and \code{LOCK_DEBUG} builds enforce it.
+  \item Functions that need a lock assert it with \code{ASSERT_HELD}, and CI runs the classic-problem tests with the lock-order checker.
   \item \code{refcount_t} warns and saturates instead of wrapping, and the reference-count tests pass.
 \end{checklist}
 \end{milestonebox}

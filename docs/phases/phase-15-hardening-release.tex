@@ -6,8 +6,9 @@
 
 \ataglance{3--4 weeks for the core, then open-ended}{4}{Phases 0--14 complete: Turk-OS boots to a shell with pipes, files and processes}{A
 system call fuzzer that runs for an hour without a kernel panic, an audited user/kernel boundary, kernel stack
-protection and read-only kernel code, users and file permissions, a benchmark suite with one measured optimisation,
-an architecture document, a reproducible \code{make release} that produces a bootable ISO, the \code{v1.0} tag, and a
+protection and read-only kernel code, users, file and device permissions with sessions, a threat model with its
+residual risks, a benchmark suite with one measured optimisation, an architecture document, a reproducible
+\code{make release} that produces a bootable ISO with published hashes, the signed \code{v1.0} tag, and a
 written reflection on your design. After that, a choice of tracks beyond 100\,\%, and Stage V: the RISC-V and ARM
 ports of Phases 16--18.}
 
@@ -78,6 +79,8 @@ put everything you left out of version 1 into version 2.
 \could & \OSC & Ch.~20 \emph{The Linux System} & 775--819 & Another view of Linux for the comparison. \\
 \should & \LKD & Ch.~18, \emph{Debugging} & 363--378 & Oopses, assertions and debugging techniques for your hardening work. \\
 \could & \LKP & Ch.~5, \emph{Kernel modules and security -- an overview}; Ch.~7, \emph{Randomizing the memory layout -- KASLR} & 256--261, 362--367 & Defences a production kernel adds. \\
+\should & \SPEC & NIST SP~800-218, \emph{Secure Software Development Framework} (\url{https://csrc.nist.gov/pubs/sp/800/218/final}), practices PS and PW & -- & The yardstick for Task~15.7's release integrity and Task~15.2's review. \\
+\should & \SPEC & Linux kernel documentation, \emph{Kernel Self-Protection} (\url{https://docs.kernel.org/security/self-protection.html}) & -- & The defences of Task~15.3, and the ones Turk-OS leaves out. \\
 \end{readingplan}
 
 \begin{minixbox}
@@ -93,18 +96,23 @@ look at Track E below if you want to try the MINIX approach on one of your own d
 \section{Build it}
 
 \task{Fuzz the system call interface}
-Write \code{user/bin/fuzz}: a program that makes random system calls forever, with a seed you can print and replay.
-Mix the arguments: small integers, huge integers, negative numbers, pointers to valid buffers, pointers into the kernel
-(\code{0xC0000000} and up), unmapped addresses, addresses one byte before the end of a page, descriptors that exist and
-ones that don't, and random strings as paths. Run several copies at once together with a stress script that forks,
-execs, pipes and writes files in parallel. Every kernel panic is a bug to fix; every process killed by a signal is
-fine.
+\code{user/bin/fuzz} has made random system calls since Phase 11, with a seed you can print and replay, and Phase 14
+taught it pipes and the terminal. This is its final pass. Check that the argument mix covers every class: small
+integers, huge integers, negative numbers, pointers to valid buffers, pointers into the kernel (\code{0xC0000000} and
+up), pointers into the program's own read-only text, unmapped addresses, addresses one byte before the end of a page,
+descriptors that exist and ones that don't, and random strings as paths. Add each call of this phase as you write it.
+Run several copies at once together with a stress script that forks, execs, pipes and writes files in parallel, first
+as root and, once Task~15.4 exists, as an ordinary user (UID 1000). Every kernel panic is a bug to fix; every process
+killed by a signal is fine. If you have a spare machine, also let the campaign soak for 24 hours locally; hosted CI
+jobs are time-limited, so the long run stays out of CI.
 \verify{Four fuzzers and the stress script run for one hour with zero kernel panics and no growth in memory use
-after they are stopped.}
+after they are stopped, both as root and as UID 1000.}
 
 \task{Audit the boundary}
-Go through every system call and write down, in a table in \code{docs/}, each argument and how it is validated. Look
-specifically for these bugs, because the fuzzer is unlikely to find all of them.
+The boundary table \code{docs/security/syscalls.md} has grown since Phase 10, one row per system call with each
+argument and how it is validated. Make the final pass: every call, including those of this phase, has a complete row,
+the code still does what the row says, every user pointer goes through the uaccess routines, and \code{cppcheck} runs
+clean. Then look specifically for these bugs, because the fuzzer is unlikely to find all of them.
 
 \begin{center}
 \small\renewcommand{\arraystretch}{1.25}
@@ -123,24 +131,95 @@ resource exhaustion & unlimited processes, descriptors, pipe buffers or path len
 \end{center}
 
 \task{Harden the kernel itself}
-Compile the kernel with \code{-fstack-protector-strong}. GCC then inserts a canary check in functions with local
-arrays and needs two symbols from you: \code{__stack_chk_guard}, set to an unpredictable value at boot (for example
-from \code{rdtsc}), and \code{__stack_chk_fail}, which panics. Map the kernel image with 4\,KiB pages so \code{.text} and
-\code{.rodata} are read-only (with CR0.WP set, a stray write faults at once). Make sure the page at address 0 is never
-mapped in any process. Finally, make crash reports readable: generate a symbol table from \code{i686-elf-nm} at build
-time, load it as a boot module, and print function names in the backtrace of every panic.
+The kernel has been built with \code{-fstack-protector-strong} since Phase 10, and its \code{.text} and \code{.rodata}
+have been read-only since Phase 6. Check both once more on the release build: every kernel object file gets the
+protector except the one function that sets \code{__stack_chk_guard}, which is compiled with
+\code{-fno-stack-protector} and never returns into a frame entered before the guard changed (that return would report
+``stack smashing'' on a correct stack). The kernel image is still mapped with 4\,KiB pages, CR0.WP is still set, and
+the page at address 0 is never mapped in any process.
+
+The guard is only as good as its seed, and \code{rdtsc} alone is predictable. Give the kernel one entropy function:
+\code{rdrand} when CPUID reports it (QEMU's \code{-cpu max} does), otherwise \code{rdtsc} mixed with the Multiboot
+memory map. Write in the threat model that the fallback is weak and acceptable only for a teaching system.
+
+\begin{lst}{c}{kernel/arch/i386/random.c}
+#include <cpuid.h>
+
+uint32_t arch_random32(void)
+{
+    unsigned a, b, c, d;
+    if (__get_cpuid(1, &a, &b, &c, &d) && (c & bit_RDRND)) {
+        for (int i = 0; i < 10; i++) {          /* rdrand may fail briefly; retry */
+            uint32_t v;
+            unsigned char ok;
+            __asm__ volatile("rdrand %0; setc %1" : "=r"(v), "=qm"(ok) :: "cc");
+            if (ok)
+                return v;
+        }
+    }
+    return weak_seed();                         /* rdtsc ^ memory map hash: predictable */
+}
+\end{lst}
+
+Two CPU features cost one bit each. When CPUID leaf 7 reports \textbf{SMEP} (EBX bit 7), set CR4 bit 20: the CPU then
+refuses to execute a user page in ring 0, so a corrupted kernel function pointer can't jump into code a program wrote.
+\textbf{SMAP} (EBX bit 20, CR4 bit 21) is optional. It also blocks ring-0 data access to user pages, so the uaccess
+routines must wrap their copy in \code{stac} and \code{clac}; with a single uaccess choke point that is a two-line
+change.
+
+Security denials should leave a trace. Log a failed \code{setuid}, a permission denied on a device node and a process
+killed by a fault with \code{pr_warn} and the prefix \code{security:}, at that one fixed level, so
+one search of \code{log_buf} for \code{security:} answers ``what was refused?''. Finally, make crash reports readable: generate a symbol
+table from \code{i686-elf-nm} at build time, load it as a boot module, and print function names in the backtrace of
+every panic.
 \verify{A deliberate overflow of a local buffer in a test system call panics with ``stack smashing detected'' and a
-symbolised backtrace; a write to a function's code faults.}
+symbolised backtrace; a write to a function's code faults. Under \code{-cpu max} the boot log reports \code{rdrand} and
+SMEP, and a test system call that jumps to a user address faults instead of running it.}
 
 \task{Users and permissions}
 Give each task a user ID and a group ID, inherited through \code{fork}. Add \code{getuid} (24), \code{setuid} (23),
-\code{getgid} and \code{setgid}; only root may change identity. Check permissions in the VFS against the inode's mode,
+\code{getgid} and \code{setgid}; only root may change identity. Fill in \code{vfs_permission} (Task~13.1), which every VFS operation already calls,
+and check permissions there against the inode's mode,
 owner and group on \code{open}, \code{execve}, \code{create}, \code{mkdir} and \code{unlink}, with root bypassing the
-checks. Add \code{/etc/passwd} with lines of the form \code{name:uid:gid:home:shell}, and a \code{login} program that
-\code{init} runs on the console, which looks up the user, changes to their identity and home directory, and runs their
-shell. If you add passwords, store only salted hashes, never the passwords themselves.
+checks. The same checks cover \code{rename}, \code{link}, \code{chmod}, \code{chown} and \code{truncate}, including
+\code{open} with \code{O_TRUNC}; only the owner or root may \code{chmod}, and only root may \code{chown}.
+
+Files are not the only objects. A user who can open \code{/dev/hda} can rewrite every inode, \code{/etc/passwd}
+included, and walk past all the checks above. Give each \code{devfs} node an owner, a group and a mode, and check them
+through the same VFS path: \code{/dev/hd*} is \code{root:root 0600}, \code{/dev/tty} is \code{0620}, and
+\code{/dev/null} and \code{/dev/zero} are \code{0666}.
+
+The terminal needs an owner too. As Phase 14 left it, \code{ioctl} 54 lets any process make any group the foreground,
+so a background job left behind by one user could take the console and read the next user's \code{login} input. Give
+each process a session ID, inherited through \code{fork}, and add \code{setsid}, which makes the caller the leader of
+a new session. The first terminal a session leader opens becomes the session's \textbf{controlling terminal}.
+\code{ioctl} 54 then accepts only a process group in the caller's own session and returns \code{-EPERM} otherwise.
+When the session leader exits, the kernel sends \code{SIGHUP} to every process in the session and revokes their
+descriptors on the terminal, so later reads and writes on them fail.
+
+Add \code{/etc/passwd} with lines of the form \code{name:uid:gid:home:shell}, and a \code{login} program that
+\code{init} runs on the console, which looks up the user, starts a new session, changes to their identity and home
+directory, and runs their shell. \code{login} opens \code{/etc/passwd} and every other file of its own with
+\code{O_CLOEXEC}, so no descriptor opened as root survives into the user's shell. It drops privileges in the safe
+order, group first, because after \code{setuid} it may no longer change its group, and it stops if either call fails.
+
+\begin{lst}{c}{user/bin/login.c (dropping privileges)}
+if (setgid(pw->gid) < 0 || setuid(pw->uid) < 0) {
+    fprintf(stderr, "login: cannot change identity\n");
+    exit(1);                    /* never run the shell as root by accident */
+}
+\end{lst}
+
+Then decide about passwords and write the decision down. One honest option is no passwords at all: \code{login} only
+asks for a name, and the threat model states that whoever has the console is trusted, which is true of a QEMU window.
+The other is real passwords, and then never write your own hash. Port the reference code of a deliberately slow,
+salted key-derivation function (bcrypt, scrypt or Argon2) into user space, compute the hashes on the host when you
+build the image, and store them in \code{/etc/shadow}, owned by root with mode \code{0600}, because \code{/etc/passwd}
+must stay readable by every user. A plain salted SHA-2 hash is too fast and is brute-forced in hours.
 \verify{An ordinary user can't read a file with mode \code{0600} owned by root, can't write to \code{/bin}, and can't
-kill root's processes; root can do all three.}
+kill root's processes; root can do all three. As UID 1000, every evil program still behaves as listed, \code{open} of
+\code{/dev/hda} returns \code{-EACCES}, and a background job's \code{ioctl} 54 on another session's terminal returns
+\code{-EPERM}. After logout, a job left running in the old session has received \code{SIGHUP}.}
 
 \task{Benchmarks, and one real optimisation}
 Write \code{user/bin/bench}, which reports the median of many runs for each measurement below, and put the results in
@@ -174,6 +253,15 @@ arguments and errors; the lock order; the TurkFS on-disk format; how to build, r
 limitations. Add a \code{README} that gets a newcomer from a clean clone to a running shell, and a
 license (MIT matches your other open-source work).
 
+Bring \code{docs/security/threat-model.md} to version 1. Next to the assets, adversaries and trust boundaries it
+already lists, add a table of residual risks: each threat, the control that addresses it, and what is left, such as
+the weak entropy fallback, the missing W\textasciicircum{}X for user data on i386 without PAE, or console access trusted when there
+are no passwords. Close it with an explicit out-of-scope list: physical attackers and the boot chain (BIOS boot has no
+root of trust), network attackers (there is no network stack), malicious hardware and DMA, and speculative-execution
+side channels such as Spectre and Meltdown. Writing them down is what separates a decision from an oversight. Add
+\code{SECURITY.md} at the top of the repository: which version is supported, how to report a bug privately, and a link
+to the threat model.
+
 \task{Release v1.0}
 Add \code{make release}: build the kernel, the user programs, the root archive and a TurkFS image populated with
 \code{/bin}, \code{/etc} and a home directory, and a GRUB ISO whose \code{grub.cfg} loads the kernel and its modules.
@@ -185,8 +273,24 @@ UEFI with CSM) can boot the ISO from a USB stick.
 \code{sudo dd if=build/turkos.iso of=/dev/sdX bs=4M} erases the target device completely. Run \code{lsblk} before and
 after plugging the stick in, make sure \code{sdX} is the stick and not your laptop's disk, and never guess.
 \end{warnbox}
+
+``Reproducible'' is a claim you can test. Fix the time the build embeds with \code{SOURCE_DATE_EPOCH}, keep the
+clone's path out of debug information with \code{-ffile-prefix-map}, build twice from two clean clones, and compare the
+hashes. \code{kernel.elf} and the user binaries must be identical. \code{grub-mkrescue} may embed timestamps in the ISO;
+if two ISOs differ, say so in the release notes instead of hiding it. Publish a \code{SHA256SUMS} file with the ISO, the
+kernel and the TurkFS image, and sign the tag so anyone can check that it came from you.
+
+\begin{lst}{sh}{Two clean builds, hashes and a signed tag}
+export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+git clone -q . ../rel-a && make -C ../rel-a release
+git clone -q . ../rel-b && make -C ../rel-b release
+sha256sum ../rel-a/build/kernel.elf ../rel-b/build/kernel.elf    # the two hashes must match
+(cd ../rel-a/build && sha256sum turkos.iso kernel.elf turkfs.img > SHA256SUMS)
+git tag -s v1.0 -m "Turk-OS 1.0"                                  # needs a GPG key
+\end{lst}
 \verify{A fresh clone builds with one command and boots from ISO to the login prompt. \code{make test} passes on the
-tagged commit.}
+tagged commit. Two clean builds give identical \code{kernel.elf} hashes, \code{SHA256SUMS} matches the published files,
+and \code{git tag -v v1.0} reports a good signature.}
 
 \task{Defend your design}
 Write a reflection of three to five pages, as if for a thesis committee. For each subsystem (boot, memory, processes,
@@ -235,12 +339,17 @@ phase stays what it is: Turk-OS 1.0, finished.
 
 \begin{milestonebox}[Turk-OS 1.0]
 \begin{checklist}
-  \item One hour of parallel fuzzing and stress testing without a kernel panic or a memory leak.
+  \item One hour of parallel fuzzing and stress testing, as root and as UID 1000, without a kernel panic or a memory
+        leak.
   \item Boundary audit table complete; stack protector, read-only kernel code and symbolised backtraces in place.
-  \item Users, \code{login} and file permissions enforced.
+  \item Entropy source, SMEP when available, and \code{security:} log lines for denials in place.
+  \item Users, \code{login} and file permissions enforced; device nodes owned, sessions and terminal ownership
+        enforced; the password decision written down.
   \item Benchmark table written, with one optimisation measured before and after.
-  \item Architecture document, README and system call reference written.
-  \item \code{make release} works from a clean clone; the ISO boots; \code{v1.0} is tagged.
+  \item Architecture document, README and system call reference written; threat model v1 lists every residual risk;
+        \code{SECURITY.md} in place.
+  \item \code{make release} works from a clean clone; the ISO boots; two clean builds give identical
+        \code{kernel.elf} hashes; \code{SHA256SUMS} is published and \code{v1.0} is a signed tag.
   \item The design reflection is written, and ideally presented.
 \end{checklist}
 \end{milestonebox}

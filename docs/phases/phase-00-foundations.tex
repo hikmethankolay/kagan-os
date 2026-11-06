@@ -4,7 +4,7 @@
 \begin{document}
 \phaseheader{0}{Foundations and Toolchain}{Set up the workshop: a cross compiler, an emulator, a debugger, and the C habits a kernel needs}{0}{5}
 
-\ataglance{2--3 weeks}{1}{Basic C, a Fedora Linux machine, curiosity}{A working \texttt{i686-elf} cross toolchain, QEMU and GDB,
+\ataglance{2--3 weeks}{1}{Basic C, a Fedora Linux machine, curiosity}{A working \texttt{i686-elf} cross toolchain built from verified sources, QEMU and GDB,
 a Git repository with the Turk-OS skeleton, and a small C library (strings, bitmaps, lists, ring buffer) with unit tests.
 You will reuse that library inside the kernel.}
 
@@ -138,6 +138,16 @@ dumps long before you understand everything around them.
 \end{tabular}
 \end{center}
 
+\subsection{What you will defend, and against whom}
+
+A kernel is also the part of the system that must not be fooled. Three words describe that job. An \textbf{asset} is
+something worth protecting: kernel memory and control flow, the memory of other processes, the files on disk, the
+toolchain that builds the release. An \textbf{adversary} is whoever might attack an asset: a buggy or hostile user
+program, a corrupted disk image, a tampered compiler download. A \textbf{trust boundary} is the line where data
+crosses from a less trusted side to a more trusted one, such as a system call from ring 3 into ring 0 or a disk
+block read into a kernel structure. Every check you write later sits on one of these boundaries. In this phase you
+only write the list down (Task~0.9). The full threat model comes in Phase 10, when ring 3 exists.
+
 \section{Reading plan}
 
 Read the \must items before starting the tasks. The \should items make the tasks easier and are worth the time
@@ -186,8 +196,21 @@ profile to VS Code's \code{settings.json} that starts a shell on the host:
 The Fedora \code{gcc} produces programs for Linux. It assumes things that are false inside your kernel: that a C
 library exists, that the stack protector runtime is available, that code should be position-independent. A
 \textbf{cross compiler} targeting \code{i686-elf} assumes nothing. Follow the OSDev Wiki page \emph{GCC
-Cross-Compiler}. Download recent binutils and GCC sources from \url{https://ftp.gnu.org/gnu/}, then build each one in
-a separate build directory, never inside its source tree:
+Cross-Compiler}. Download recent binutils and GCC sources from \url{https://ftp.gnu.org/gnu/}, together with their
+\code{.sig} files and the GNU keyring. Check every archive before you unpack it. A compiler is the one program you
+cannot audit afterwards: a tampered one can put anything into every kernel you build.
+
+\begin{lst}{sh}{verify-sources.sh (in the folder that holds the archives)}
+curl -LO https://ftp.gnu.org/gnu/gnu-keyring.gpg
+gpg --import gnu-keyring.gpg
+gpg --verify binutils-X.Y.tar.xz.sig   binutils-X.Y.tar.xz
+gpg --verify gcc-X.Y.Z.tar.xz.sig      gcc-X.Y.Z.tar.xz
+\end{lst}
+
+Each \code{gpg --verify} must print \code{Good signature from} a GNU maintainer. A warning that the key is not
+certified with a trusted signature is normal for a key you have not signed yourself. \code{BAD signature} or a
+missing \code{.sig} file means you delete the archive and download it again. Only then build each one in a separate
+build directory, never inside its source tree:
 
 \begin{lst}{sh}{build-cross.sh (outline; replace X.Y with the versions you downloaded)}
 export PREFIX="$HOME/opt/cross"
@@ -216,20 +239,28 @@ cause bugs that are very hard to recognise.
 -m32 -ffreestanding -fno-pie -fno-stack-protector -fno-builtin -nostdlib -fcf-protection=none
 \end{lst}
 \end{tipbox}
-\verify{\code{i686-elf-gcc --version} and \code{i686-elf-ld --version} work in a fresh terminal.}
+\verify{\code{gpg --verify} reported a good signature for both archives (save its output for your journal), and
+\code{i686-elf-gcc --version} and \code{i686-elf-ld --version} work in a fresh terminal.}
 
 \task{Create the repository skeleton}
 Create the project layout, initialise Git, and ignore build outputs. Commit early and often from now on: small
-commits let you bisect your way back to the last working kernel when something breaks.
+commits let you bisect your way back to the last working kernel when something breaks. Also record the exact tool
+versions in \code{docs/toolchain.lock}, a plain text file that says which tools this tree is built and tested with.
+When a build breaks after an upgrade, this file tells you what changed. Add the GRUB and QEMU versions by hand if
+your distribution updates them, and edit the file whenever you rebuild the cross compiler.
 
 \begin{lst}{sh}{terminal}
 cd Turk-OS                     # your project folder
-mkdir -p boot kernel lib include tests tools user
+mkdir -p boot kernel lib include tests tools user docs
 git init
 printf 'build/\n*.o\n*.elf\n*.bin\n*.iso\n*.img\n' > .gitignore
+{ i686-elf-gcc --version | head -n1; i686-elf-ld --version | head -n1
+  nasm -v; qemu-system-i386 --version | head -n1
+  grub2-mkrescue --version; } > docs/toolchain.lock
 git add . && git commit -m "Turk-OS: empty skeleton and study plan"
 \end{lst}
-\verify{\code{git log} shows your first commit.}
+\verify{\code{git log} shows your first commit, and \code{docs/toolchain.lock} lists GCC, binutils, NASM, QEMU and
+GRUB with a version each.}
 
 \task{Write the C warm-up library, and test it on Linux}
 Write these functions from scratch, without the C library, in \code{lib/}. They are small, and every one of them
@@ -247,16 +278,43 @@ address and undefined-behaviour sanitizers to catch memory mistakes while you st
 \code{bitmap.c} & \code{bitmap_set}, \code{bitmap_clear}, \code{bitmap_test}, \code{bitmap_find_first_clear} & Phase 5 (frame allocator) \\
 \code{ringbuf.c} & fixed-size byte ring buffer: \code{rb_put}, \code{rb_get}, \code{rb_empty}, \code{rb_full} & Phase 4 (keyboard) \\
 \code{list.h} & intrusive doubly linked list: \code{list_add}, \code{list_del}, \code{list_for_each} & Phases 7--8 (heap, tasks) \\
+\code{checked.h} & \code{add_overflow}, \code{mul_overflow}: size arithmetic that reports wrap-around & Phase 7 on (sizes from outside) \\
 \bottomrule
 \end{tabularx}
 \end{center}
+
+\code{checked.h} is the only file here that protects against attackers rather than against your own slips. Every
+time the kernel computes \code{offset + length} or \code{count * size} from a value it did not choose, an unsigned
+wrap-around can turn a huge request into a tiny buffer. GCC already detects the wrap; the wrappers give it a short
+name and a fixed width, so the same code means the same thing in the 64-bit host tests and in the 32-bit kernel.
+
+\begin{lst}{c}{lib/checked.h}
+#ifndef CHECKED_H
+#define CHECKED_H
+#include <stdbool.h>
+#include <stdint.h>
+
+/* true if the exact result does not fit; *res then holds the wrapped value */
+static inline bool add_overflow(uint32_t a, uint32_t b, uint32_t *res)
+{
+    return __builtin_add_overflow(a, b, res);
+}
+
+static inline bool mul_overflow(uint32_t a, uint32_t b, uint32_t *res)
+{
+    return __builtin_mul_overflow(a, b, res);
+}
+#endif
+\end{lst}
 
 \begin{lst}{sh}{terminal}
 gcc -std=gnu11 -Wall -Wextra -g -fsanitize=address,undefined \
     -Iinclude tests/test_lib.c lib/*.c -o build/test_lib && ./build/test_lib
 \end{lst}
 \verify{All asserts pass with sanitizers enabled, including edge cases: zero-length copies, overlapping
-\code{memmove}, \code{utoa(0)}, \code{itoa(INT_MIN)}, a full ring buffer, the last bit of a bitmap.}
+\code{memmove}, \code{utoa(0)}, \code{itoa(INT_MIN)}, a full ring buffer, the last bit of a bitmap, and the overflow
+helpers: \code{add_overflow(UINT32_MAX, 1, &r)} returns true, \code{mul_overflow(0, UINT32_MAX, &r)} returns false
+with \code{r == 0}, and \code{mul_overflow(0x10000, 0x10000, &r)} returns true.}
 
 \task{Read your first assembly}
 You will learn to write assembly in Phase 1, but you can start reading it today. Write three tiny functions (add two
@@ -285,6 +343,31 @@ Create \code{docs/journal.md}. For every session, write down the date, what you 
 learned. When a bug takes more than an hour, write down the hypothesis before each attempt. This feels slow and
 saves weeks.
 
+\task{Write down what Turk-OS defends}
+Create \code{docs/security/threat-model.md} with half a page: the assets, the adversaries, and an explicit list of
+what Turk-OS does \emph{not} defend against. The out-of-scope list matters as much as the rest. An assumption you
+never wrote down is one you will forget you made. Keep it short; Phase 10 turns it into a full threat model, and
+later phases add lines to it.
+
+\begin{lst}{plain}{docs/security/threat-model.md (stub)}
+# Turk-OS threat model (stub)
+
+Assets: kernel memory and control flow; other processes' memory;
+file contents and permissions on disk; kernel availability;
+the release image and the toolchain that built it.
+
+Adversaries: an unprivileged local program (from Phase 10);
+malformed media and boot inputs (disk images, ELF files);
+a tampered toolchain or source download.
+
+Out of scope:
+- physical attackers and the boot chain (BIOS + GRUB, no secure boot)
+- network attackers (Turk-OS has no network stack)
+- malicious hardware and DMA (devices are trusted; QEMU emulates them)
+- side channels such as Spectre/Meltdown (single user, emulated machine)
+\end{lst}
+\verify{The file is committed, and each out-of-scope line says in a few words why it is out of scope.}
+
 \section{Testing and debugging}
 
 Most problems in this phase are environment problems. The table covers the common ones.
@@ -295,6 +378,7 @@ GCC build stops with missing \code{gmp.h} or \code{mpfr.h} & Build dependencies 
 \code{configure: error: building in source directory} & Built inside the source tree & Use a separate \code{build-gcc} directory. \\
 \code{i686-elf-gcc} found in one terminal, not another & \code{PATH} set only in that shell & Put the export in \code{~/.bashrc}; open a new terminal. \\
 Sanitizer reports \code{heap-buffer-overflow} in your \code{strncpy} & Off-by-one on the terminator & Good: this is why you test on Linux first. Fix it now, not inside a kernel. \\
+\code{gpg: Can't check signature: No public key} & GNU keyring not imported & Run \code{gpg --import gnu-keyring.gpg}, then verify again. \\
 \end{pitfalls}
 
 \section{Milestone}
@@ -307,6 +391,9 @@ Sanitizer reports \code{heap-buffer-overflow} in your \code{strncpy} & Off-by-on
   \item You have compiled C to assembly and can explain the output of a small function.
   \item You have seen the SeaBIOS ``no bootable device'' screen and used \code{info registers}.
   \item \code{docs/journal.md} has its first entries.
+  \item Both toolchain archives passed \code{gpg --verify}, and \code{docs/toolchain.lock} records the tool versions.
+  \item The overflow helpers in \code{lib/checked.h} pass their edge-case tests.
+  \item \code{docs/security/threat-model.md} lists the assets, the adversaries and what is out of scope.
 \end{checklist}
 \end{milestonebox}
 

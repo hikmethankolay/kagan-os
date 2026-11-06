@@ -127,6 +127,25 @@ call entered with. Set \code{current->tf = r} at the top of the syscall handler;
 all need to read or change the saved user registers. Put a limit on the number of processes (say 64), so that a fork
 bomb fails with \code{-EAGAIN} instead of exhausting memory.
 
+Processes now come and go all the time, so replace the counter that hands out PIDs. PIDs stay in \code{1..32767} and
+wrap around, never become negative (\code{kill} and \code{waitpid} give negative values a meaning), and skip every
+PID that a task still holds, zombies included, because a parent may still \code{waitpid} for it.
+
+\begin{lst}{c}{kernel/proc/pid.c}
+#define PID_MAX 32767
+
+int pid_alloc(void)                          /* called with the task list lock held */
+{
+    static int last;
+    for (int i = 0; i < PID_MAX; i++) {
+        last = last % PID_MAX + 1;           /* 1, 2, ..., 32767, 1, ... */
+        if (!task_find(last))                /* zombies are still in the list */
+            return last;
+    }
+    return -EAGAIN;
+}
+\end{lst}
+
 \task{Frame reference counts}
 Add a reference count per physical frame to the PMM: an array of \code{refcount_t} from Task~9.8 covers the
 512\,MiB direct map with 512\,KiB. \code{pmm_ref(pa)} calls \code{refcount_inc}; \code{pmm_unref(pa)} frees the frame
@@ -169,29 +188,44 @@ value, and \code{fork} returns the child's PID in the parent.}
 Replace the copying loop. For every present user PTE in the parent: if it is writable, clear R/W and set your
 \code{PG_COW} bit (\code{0x200}) in the parent's PTE; copy the PTE into the child; call \code{pmm_ref} on the frame.
 When the loop is done, reload CR3 in the parent: you changed many of its live mappings, and its TLB still holds the
-old writable ones. Then extend the page-fault handler.
+old writable ones. Then write the routine that breaks the sharing for one page. It returns an error instead of
+killing anyone, because the caller decides what a failure means: for a write from user mode it means
+\code{SIGKILL}, but Task~11.7 also calls it on behalf of \code{copy_to_user}, where the right answer is
+\code{-ENOMEM}.
 
 \begin{lst}{c}{kernel/mm/fault.c (COW case)}
-/* A write to a present page (error bits P and W set) below the kernel. The fault can come
- * from user mode or from the kernel writing through copy_to_user (CR0.WP is set). */
-if ((r->err_code & 3) == 3 && addr < KERNEL_VMA) {
+/* Give the current address space its own writable copy of a present COW page.
+ * Returns 0, or -ENOMEM if no frame is free. */
+int cow_break(pte_t *pte, uintptr_t addr)
+{
+    uintptr_t old = *pte & ~0xFFFu;
+    if (pmm_refcount(old) == 1) {                        /* last user: just take it back */
+        *pte = (*pte | PG_WRITE) & ~PG_COW;
+    } else {
+        uintptr_t copy = pmm_alloc_frame();
+        if (!copy)
+            return -ENOMEM;
+        memcpy(P2V(copy), P2V(old), PAGE_SIZE);
+        *pte = copy | (*pte & 0xFFF & ~PG_COW) | PG_WRITE;
+        pmm_unref(old);
+    }
+    __asm__ volatile ("invlpg (%0)" : : "r"(addr) : "memory");
+    return 0;                                            /* the CPU can retry the write */
+}
+
+/* In the page-fault handler: a write from user mode (error bits P, W and U) to a COW page. */
+if ((r->err_code & 7) == 7 && addr < KERNEL_VMA) {
     pte_t *pte = vmm_get_pte(current->pgdir, addr);
     if (pte && (*pte & PG_COW)) {
-        uintptr_t old = *pte & ~0xFFFu;
-        if (pmm_refcount(old) == 1) {                    /* last user: just take it back */
-            *pte = (*pte | PG_WRITE) & ~PG_COW;
-        } else {
-            uintptr_t copy = pmm_alloc_frame();
-            if (!copy) { kill_current(SIGKILL); return; }
-            memcpy(P2V(copy), P2V(old), PAGE_SIZE);
-            *pte = copy | (*pte & 0xFFF & ~PG_COW) | PG_WRITE;
-            pmm_unref(old);
-        }
-        __asm__ volatile ("invlpg (%0)" : : "r"(addr) : "memory");
-        return;                                          /* the CPU retries the write */
+        if (cow_break(pte, addr) < 0)
+            kill_current(SIGKILL);                       /* acted on before the return to ring 3 */
+        return;
     }
 }
 \end{lst}
+Killing is safe here only because the fault came from ring 3: the signal is acted on before the return to user mode,
+so the write is never retried. A fault raised by the kernel itself must never take this path, or it would retry the
+same write forever.
 \verify{Right after forking a process with a 1\,MiB array, the PMM free count drops only by a few frames (page tables
 and the kernel stack). Each write to a new page of the array in the child costs exactly one more frame.}
 
@@ -246,7 +280,46 @@ Until Phase 13 brings a file system, \code{execve} finds programs by name in the
 to grow into the stack region; when the heap shrinks, unmap and unreference the pages beyond the new end. Don't map
 anything when it grows: in the page-fault handler, a not-present fault inside \code{[heap_start, brk)} maps a zeroed
 page. Similarly, a fault less than 8\,MiB below \code{0xC0000000} and near the current stack maps a new stack page.
-\verify{A user program that \code{brk}s 64\,MiB but touches only three pages costs three frames.}
+``The current stack'' means the user ESP saved in the trap frame (\code{current->tf->useresp}): during a system call,
+the ESP register holds the kernel stack.
+
+Lazy pages break the \code{copy_from_user} of Phase 10, which accepts only pages that are already present:
+\code{read(fd, malloc(65536), 65536)} on a fresh buffer would return \code{-EFAULT}. Put the rules in one function that
+the page-fault handler and \code{copy_*_user} share, so they can never disagree. It returns an error and kills nobody.
+
+\begin{lst}{c}{kernel/mm/fault.c (shared rules)}
+/* Make one user page usable for a read or a write: COW, lazy heap, stack growth.
+ * Returns 0, -EFAULT (no such page, or a read-only page) or -ENOMEM. */
+int fault_in_user_page(uintptr_t addr, bool write)
+{
+    if (addr >= KERNEL_VMA)
+        return -EFAULT;
+    pte_t *pte = vmm_get_pte(current->pgdir, addr);
+    if (pte && (*pte & PG_PRESENT)) {
+        if (!(*pte & PG_USER))
+            return -EFAULT;
+        if (!write || (*pte & PG_WRITE))
+            return 0;
+        return (*pte & PG_COW) ? cow_break(pte, addr) : -EFAULT;  /* text is read-only */
+    }
+    if (in_heap(current, addr) || in_stack_window(current, current->tf->useresp, addr))
+        return map_zero_page(current, addr & ~0xFFFu);           /* 0 or -ENOMEM */
+    return -EFAULT;
+}
+\end{lst}
+\code{copy_from_user} now calls \code{fault_in_user_page(pg, false)} for every page of the range and
+\code{copy_to_user} calls \code{fault_in_user_page(pg, true)}; the first error is returned to the system call, so a
+full memory gives \code{-ENOMEM} and a write into the program's text gives \code{-EFAULT}. Only then does the copy
+run, with \code{current->in_uaccess} set around the \code{memcpy}. The page-fault handler follows three rules. A fault
+from ring 3 calls \code{fault_in_user_page} and sends \code{SIGSEGV} (or \code{SIGKILL} for \code{-ENOMEM}) if it
+fails. A ring-0 fault on a user address is resolved the same way only when \code{current->in_uaccess} is set; if that
+fails, the pages faulted in a moment ago have vanished, which is a kernel bug, so panic with a clear message instead of
+retrying the write forever. Any other ring-0 fault on a user address means the kernel dereferenced a user pointer
+directly: panic, never quietly map the page. Because uaccess may fault and may allocate a frame, never call it with
+a spinlock held.
+\verify{A user program that \code{brk}s 64\,MiB but touches only three pages costs three frames. A \code{read} into a
+freshly \code{brk}ed buffer succeeds. With the PMM made to fail its next allocation (a test-only switch), a
+\code{read} into a page shared with a forked child returns \code{-ENOMEM} instead of hanging.}
 
 \task{Minimal signals}
 Add a pending-signal bitmask to each task, and \code{sys_kill(pid, sig)}. Before returning to user mode (in
@@ -256,10 +329,20 @@ user-mode exceptions into signals (\code{SIGSEGV} for page faults and \#GP, \cod
 \code{SIGILL} for invalid opcodes). Make Ctrl+C on the console send \code{SIGINT} to a designated foreground process;
 Phase 14 formalises this with the terminal driver.
 
+Check the arguments before touching the bitmask. \code{sys_kill} returns \code{-EINVAL} for a signal outside 1--31,
+because \code{1u << sig} past the width of the mask is undefined behaviour, and \code{-EPERM} for \code{SIGKILL} or
+\code{SIGTERM} sent to PID 1: without \code{init}, nobody reaps orphans. One rule holds for any code that later
+restores user registers from user memory, such as the \code{sigreturn} of the Going-further section: the kernel always
+sets CS and SS itself and keeps the privileged EFLAGS bits (IOPL, VM, NT) at its own values. They are never copied
+from user memory, or a process could return to ring 0 or give itself I/O ports.
+\verify{\code{kill(1, SIGKILL)} returns \code{-EPERM}, \code{kill(p, 99)} returns \code{-EINVAL}, and
+\code{kill(p, SIGKILL)} on a looping child ends it.}
+
 \task{init, and the tests}
 Write \code{user/init.c}: the kernel starts it as PID 1 once the boot is done. For now it forks and execs the test
-programs one after another and loops on \code{waitpid(-1, ...)} forever, which also reaps orphans. Add these tests to
-\code{make test}.
+programs one after another and loops on \code{waitpid(-1, ...)} forever, which also reaps orphans. \code{init} must
+never end: if PID 1 exits, \code{sys_exit} panics with a clear message such as ``init exited with status 1'' rather
+than leaving orphans that nobody reaps. Add these tests to \code{make test}.
 
 \begin{center}
 \small\renewcommand{\arraystretch}{1.25}
@@ -274,16 +357,30 @@ programs one after another and loops on \code{waitpid(-1, ...)} forever, which a
 \code{no_leaks} & 1000 fork/exec/exit/wait cycles leave PMM and heap statistics unchanged \\
 \code{fork_bomb} & forking without limit ends with \code{-EAGAIN}, and the system recovers when the processes exit \\
 \code{signals} & \code{kill(child, SIGKILL)} ends a looping child; \code{waitpid} reports status $128+9$ \\
+\code{lazy_read} & \code{read} into a freshly \code{brk}ed region, never touched before, succeeds \\
+\code{cow_read} & \code{read} into a page shared with a forked child; only the reader sees the new data \\
 \bottomrule
 \end{tabularx}
 \end{center}
+
+\task{A system call fuzzer}
+Write \code{user/bin/fuzz}: a program that makes random system calls in a loop. Seed its random number generator from
+the command line or the timer, and print the seed first, so \code{fuzz -s 1234} replays exactly the same sequence of
+calls. Cover every call that exists now, and mix the arguments: small integers, huge and negative numbers, pointers to
+valid buffers, pointers into the kernel (\code{0xC0000000} and up), unmapped addresses, the last byte of a page, a
+pointer into the program's own read-only text, and PIDs and signal numbers in and out of range. A process killed by a
+signal is fine; a kernel panic is a bug to fix, and the seed in the log reproduces it. Add a nightly CI job that boots
+the test kernel with \code{fuzz} as the only program and runs it for 10 minutes.
+\verify{\code{fuzz} runs for 10 minutes without a kernel panic, and two runs with the same seed make the same calls.}
 
 \section{Testing and debugging}
 
 \begin{pitfalls}
 The child crashes as soon as it runs & Its kernel stack doesn't match what \code{isr_return} pops, or the trap frame wasn't copied & Check in GDB that ESP at \code{isr_return} equals the address of the child's \code{struct regs}. \\
 Parent and child see each other's writes after \code{fork} & The parent's TLB still holds writable entries for pages now marked COW & Reload CR3 in the parent after the COW loop. \\
-A write by the kernel to user memory corrupts another process & CR0.WP not set, so the kernel wrote straight through a COW page & Set CR0.WP (Phase 6); the fault handler then copies the page for the kernel too. \\
+A write by the kernel to user memory corrupts another process & CR0.WP not set, so the kernel wrote straight through a COW page & Set CR0.WP (Phase 6), and let \code{copy_to_user} break the sharing through \code{fault_in_user_page} before it copies. \\
+\code{read} into a fresh \code{malloc} buffer returns \code{-EFAULT} & \code{copy_to_user} still accepts only present pages, so lazy heap pages fail & Call \code{fault_in_user_page} for every page before copying. \\
+The kernel hangs in a page-fault loop when memory runs out & A ring-0 fault was answered with a signal, which is only acted on in ring 3, so the write is retried forever & Return \code{-ENOMEM} from uaccess; never kill from a ring-0 fault. \\
 Free memory shrinks a little with every fork & A reference count isn't dropped somewhere: exit, exec's old address space, or a COW copy & Run \code{no_leaks}; print the counts before and after one cycle. \\
 Zombies pile up & Nobody waits: the shell or init doesn't reap & init loops on \code{waitpid(-1)}; later the shell reaps background jobs. \\
 A failed \code{exec} leaves a broken process & The old address space was freed before the load succeeded & Build first, swap last. \\
@@ -296,7 +393,11 @@ A failed \code{exec} leaves a broken process & The old address space was freed b
   \item \code{fork} with copy-on-write, \code{execve} with arguments, \code{waitpid}, \code{exit}, \code{getpid}, \code{getppid} and \code{brk} work.
   \item The page-fault handler resolves COW, lazy heap and stack growth, and turns everything else into \code{SIGSEGV}.
   \item \code{init} runs as PID 1, starts programs and reaps every orphan.
-  \item All seven tests pass, including 1000 cycles without leaks.
+  \item All nine tests pass, including 1000 cycles without leaks.
+  \item uaccess shares \code{fault_in_user_page} with the page-fault handler, returns \code{-ENOMEM} instead of killing from ring 0, and is never called with a spinlock held.
+  \item \code{fuzz} runs 10 minutes without a panic, nightly in CI, and replays from its seed.
+  \item \code{sys_kill} rejects bad signals and protects \code{init}; PIDs are allocated in \code{1..32767} without reuse of live or zombie PIDs.
+  \item The kernel sets CS, SS and the privileged EFLAGS bits whenever it restores user registers.
 \end{checklist}
 \end{milestonebox}
 
@@ -317,7 +418,7 @@ A failed \code{exec} leaves a broken process & The old address space was freed b
 Once Phase 12 gives you a disk, add swapping: when the PMM runs low, pick a victim page with the clock algorithm
 (\OSTEP chapter 22, \MOS\,\S3.4.5), write it to a swap partition, mark the PTE not present with the disk slot in the
 free bits, and read it back on the next fault. Add user-level signal handlers with \code{sigaction} and a
-\code{sigreturn} trampoline on the user stack. Or implement threads inside a process with a \code{clone}-style call
+\code{sigreturn} trampoline on the user stack, following the context-restore rule of Task~11.8. Or implement threads inside a process with a \code{clone}-style call
 that shares the address space.
 
 \nextphase{12}{Storage: Block Devices, ATA Driver and Buffer Cache}

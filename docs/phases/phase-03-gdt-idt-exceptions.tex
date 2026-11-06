@@ -442,14 +442,14 @@ void isr_handler(struct regs *r)
         return;
     }
     const char *name = exception_names[r->int_no] ? exception_names[r->int_no] : "Reserved";
-    kprintf("\n*** CPU exception %u: %s (error code 0x%x)\n", r->int_no, name, r->err_code);
-    kprintf("EIP=%08x  CS=%04x  EFLAGS=%08x\n", r->eip, r->cs, r->eflags);
-    kprintf("EAX=%08x  EBX=%08x  ECX=%08x  EDX=%08x\n", r->eax, r->ebx, r->ecx, r->edx);
-    kprintf("ESI=%08x  EDI=%08x  EBP=%08x\n", r->esi, r->edi, r->ebp);
+    kprintf("\n*** CPU exception %lu: %s (error code 0x%lx)\n", r->int_no, name, r->err_code);
+    kprintf("EIP=%08lx  CS=%04lx  EFLAGS=%08lx\n", r->eip, r->cs, r->eflags);
+    kprintf("EAX=%08lx  EBX=%08lx  ECX=%08lx  EDX=%08lx\n", r->eax, r->ebx, r->ecx, r->edx);
+    kprintf("ESI=%08lx  EDI=%08lx  EBP=%08lx\n", r->esi, r->edi, r->ebp);
     if (r->int_no == 14) {
         uint32_t cr2;
         __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
-        kprintf("CR2 (faulting address) = %08x\n", cr2);
+        kprintf("CR2 (faulting address) = %08lx\n", cr2);
     }
     panic("unhandled CPU exception");
 }

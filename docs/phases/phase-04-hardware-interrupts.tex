@@ -305,6 +305,42 @@ Write \code{readline(buf, size)}, which echoes characters, handles backspace (it
 \texttt{\textbackslash b}) and returns on Enter. Then write the monitor loop: print a prompt, read a line, split it at
 spaces, and look the first word up in a command table. Every later phase adds commands here.
 
+The keyboard is the kernel's first input from outside, so treat it that way. The monitor's line buffer has a fixed
+size, and \code{readline} never stores past it, however long the user keeps typing. Characters that do not fit are
+dropped and not echoed, and when Enter finally arrives the monitor warns that the line was cut. The line it runs is
+the truncated one. The monitor loop keeps \code{char line[MONITOR_LINE]} and calls \code{readline(line, sizeof line)}.
+
+\begin{lst}{c}{kernel/monitor.c (readline)}
+#define MONITOR_LINE 128
+
+/* Read one line into buf (size bytes, always NUL-terminated); return its length. */
+size_t readline(char *buf, size_t size)
+{
+    size_t len = 0;
+    bool truncated = false;
+
+    ASSERT(size > 0);
+    for (;;) {
+        char c = kbd_getchar();
+        if (c == '\n')
+            break;
+        if (c == '\b') {
+            if (len > 0) { len--; console_putc('\b'); }
+        } else if (len + 1 < size) {
+            buf[len++] = c;
+            console_putc(c);
+        } else {
+            truncated = true;                /* no room: drop it, do not echo it */
+        }
+    }
+    buf[len] = '\0';
+    console_putc('\n');
+    if (truncated)
+        pr_warn("monitor: line longer than %u characters, truncated\n", (unsigned)(size - 1));
+    return len;
+}
+\end{lst}
+
 \begin{center}
 \small\renewcommand{\arraystretch}{1.25}
 \begin{tabularx}{\linewidth}{@{}l X@{}}
@@ -322,7 +358,9 @@ spaces, and look the first word up in a command table. Every later phase adds co
 \end{tabularx}
 \end{center}
 \verify{A session like \code{turk> uptime} prints the right time; backspace edits the line; \code{dmesg} replays the
-boot messages that scrolled away; \code{reboot} restarts QEMU and you see the boot banner again.}
+boot messages that scrolled away; \code{reboot} restarts QEMU and you see the boot banner again. Hold a key down
+until about 1,000 characters have gone by (auto-repeat does the typing), then press Enter: the warning appears, the
+monitor answers with an unknown-command message for the first 127 characters, and the prompt returns.}
 
 \task{Keep handlers short: top and bottom halves}
 While a handler runs, the PIC holds back every interrupt of equal or lower priority, and with interrupts disabled
@@ -384,6 +422,7 @@ Occasional interrupt on vector 39 (IRQ 7) or 47 & Spurious IRQ from the PIC & Re
   \item Ticks arrive at 100\,Hz; \code{uptime} is accurate and \code{sleep_ms} works.
   \item Typing echoes correctly with shift, caps lock and backspace.
   \item The monitor runs \code{help}, \code{clear}, \code{uptime}, \code{mem}, \code{crash} and \code{reboot}.
+  \item Monitor input is bounded: a 1,000-character line is truncated with a warning, and the kernel keeps running.
   \item Left idle for ten minutes at the prompt, the kernel neither crashes nor spins: it halts between interrupts.
 \end{checklist}
 \end{milestonebox}
