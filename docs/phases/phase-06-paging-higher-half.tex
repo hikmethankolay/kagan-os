@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 \phaseheader{6}{Paging and the Higher-Half Kernel}{Turn on the MMU, move the kernel to 0xC0000000, and build the virtual memory layer every later phase stands on}{34}{42}
@@ -110,7 +110,7 @@ working for a while, and then it does not.
 
 Once user processes exist, each gets its own page directory, but the kernel must be reachable from all of them:
 interrupts and system calls arrive while a user address space is active. The standard solution is to map the kernel
-into the top of \emph{every} address space and give the bottom to user programs. Turk-OS uses the Linux-style split:
+into the top of \emph{every} address space and give the bottom to user programs. Kagan uses the Linux-style split:
 0--3\,GiB for users and 3--4\,GiB for the kernel (Figure~\ref{fig:layout}). The kernel is linked to run at
 \code{0xC0100000} but still loaded by GRUB at physical \code{0x00100000}; \LOB chapter 9 explains why not to simply
 identity-map the kernel low instead.
@@ -135,7 +135,7 @@ identity-map the kernel low instead.
   \draw[decorate, decoration={brace, amplitude=5pt}, tkGreen!70!black] ([xshift=4pt]user.north east) -- ([xshift=4pt]user.south east)
     node[midway, right=6pt, n] {user half\\(PDEs 0--767)};
 \end{tikzpicture}
-\caption{The Turk-OS virtual address space.}
+\caption{The Kagan virtual address space.}
 \label{fig:layout}
 \end{figure}
 
@@ -146,7 +146,7 @@ it has just taken from the PMM: to zero a new page table, to copy a page, to loa
 options. The kernel can \textbf{map frames temporarily} into a reserved slot each time. It can use a \textbf{recursive
 mapping}, where the last PDE points at the directory itself, so the tables appear at \code{0xFFC00000}. Or it can
 keep a \textbf{direct map} of physical memory in the kernel half, so physical address $p$ is always visible at
-$p + \code{0xC0000000}$. Turk-OS uses the direct map, like xv6 and 32-bit Linux: it makes every later phase simpler,
+$p + \code{0xC0000000}$. Kagan uses the direct map, like xv6 and 32-bit Linux: it makes every later phase simpler,
 at the price of limiting usable RAM to 512\,MiB, which is plenty for this project. Two macros, \code{P2V} and
 \code{V2P}, convert between the two kinds of address.
 
@@ -162,7 +162,7 @@ at the price of limiting usable RAM to 512\,MiB, which is plenty for this projec
 \should & \MOS & \S3.3 \emph{Virtual Memory} (paging, page tables, speeding up paging, large memories) & 194--209 & The same ground with more hardware detail. \\
 \could & \OSDI & \S4.3 \emph{Virtual Memory} & 383--396 & Another careful walk through page tables and TLBs. \\
 \could & \OSTEP & Ch.~23 \emph{The VAX/VMS Virtual Memory System} (now \emph{Complete Virtual Memory Systems}, \S23.1) & 255--264 & A real system that also maps the kernel into every address space. \\
-\should & \LKP & Ch.~7, \emph{Understanding the VM split} and \emph{Examining the kernel segment} & 314--326, 340--361 & The same 3\,GiB/1\,GiB split as Turk-OS, in a production kernel. \\
+\should & \LKP & Ch.~7, \emph{Understanding the VM split} and \emph{Examining the kernel segment} & 314--326, 340--361 & The same 3\,GiB/1\,GiB split as Kagan, in a production kernel. \\
 \could & \LKP & Ch.~7, \emph{Randomizing the memory layout -- KASLR} & 362--367 & A hardening idea for Phase~15. \\
 \end{readingplan}
 
@@ -174,7 +174,7 @@ Here MINIX is a contrast rather than a model. The MINIX 3 version in \OSDI does 
 contiguous text and data segments described by its own local descriptor table, and protection comes from segment
 limits (\OSDI\,\S4.6.2 and \S4.7.1). Later MINIX releases added paging, for the reasons \MOS\,\S3.7.3 gives for
 why x86 systems abandoned segmentation. For a small paging kernel to compare with, the MIT xv6
-source (\code{vm.c}) which uses the same direct-map approach as Turk-OS.
+source (\code{vm.c}) which uses the same direct-map approach as Kagan.
 
 \par\smallskip\textbf{Linux, for comparison.} \LKP 32-bit Linux on x86 uses the same 3\,GiB/1\,GiB split by default, with low memory mapped directly at \code{0xC0000000}. Modern kernels also randomise where the kernel sits (KASLR), so an attacker cannot rely on fixed addresses.
 \end{minixbox}
@@ -469,7 +469,7 @@ Page fault with error code 3 on \code{lgdt}, a segment load or \code{ltr} & The 
 
 \begin{questionbox}
 \begin{enumerate}
-  \item Translate \code{0xC0101234} by hand: which PDE index, which PTE index, which offset? With the Turk-OS boot directory, which physical address does it reach?
+  \item Translate \code{0xC0101234} by hand: which PDE index, which PTE index, which offset? With the Kagan boot directory, which physical address does it reach?
   \item Why must the code that enables paging be identity-mapped at that moment?
   \item What do CR2 and CR3 hold? Why does CR3 need a physical address?
   \item When exactly must \code{invlpg} be executed? When is reloading CR3 better?

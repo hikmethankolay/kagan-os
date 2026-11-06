@@ -1,10 +1,10 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 \phaseheader{16}{Portability: an Architecture Layer}{Find every place where x86 leaked into the generic kernel, hide the CPU and the board behind one interface, and prove that x86 still behaves exactly as before}{0}{20}
 
-\ataglance{2--3 weeks}{3}{Phase 15 complete: Turk-OS 1.0 tagged, \code{make test} and the fuzzer pass}{The same Turk-OS on x86,
+\ataglance{2--3 weeks}{3}{Phase 15 complete: Kagan 1.0 tagged, \code{make test} and the fuzzer pass}{The same Kagan on x86,
 with all x86 code behind \code{include/arch.h}: a written leak audit in \code{docs/porting.md}, one trap frame with
 accessors, \code{struct bootinfo} instead of Multiboot, the MMU behind \code{arch_mmu_*}, consoles and input that any
 board can provide, \code{make ARCH=}, a 64-bit-clean generic core that compiles for \code{riscv32} and \code{aarch64},
@@ -12,17 +12,17 @@ a devicetree parser with host tests, and two more cross compilers ready for Phas
 
 \section{Scope and motivation}
 
-Turk-OS 1.0 is x86 from the first instruction to the last trap frame. Some of that is honest: \code{isr.s},
+Kagan 1.0 is x86 from the first instruction to the last trap frame. Some of that is honest: \code{isr.s},
 \code{gdt.c} and \code{paging.c} live in \code{kernel/arch/i386} because they can't be anything but x86. Much of it
 leaked, though. The system call dispatcher reads \code{r->eax}, the page-fault handler reads CR2, \code{fork} writes
 \code{tf->eax = 0}, the frame allocator walks the Multiboot memory map, \code{irq_restore} tests bit \code{0x200} of
 EFLAGS, and \code{kmain} ends a test run by writing to port \code{0xF4}. Each of these lines works; it only shows up as
 a leak on a second machine.
 
-Stage V brings that second machine. Phase 17 ports Turk-OS to RISC-V (RV32 on QEMU's \code{virt} board, and optionally
+Stage V brings that second machine. Phase 17 ports Kagan to RISC-V (RV32 on QEMU's \code{virt} board, and optionally
 on the Timur-RV32IMC soft core), and Phase 18 to 64-bit ARM (AArch64 on QEMU's \code{virt} board, and optionally a
 Raspberry Pi~4). This phase writes no RISC-V or ARM code. It is a refactoring: it prepares the seams, and at its end
-Turk-OS on x86 does exactly what version 1.0 did, with the same tests passing and benchmarks within a few per cent.
+Kagan on x86 does exactly what version 1.0 did, with the same tests passing and benchmarks within a few per cent.
 
 Porting sorts the kernel into three kinds of code. The \textbf{architecture} is the CPU: instruction set, privilege
 levels, traps, MMU, atomics. The \textbf{board}, or platform, is everything around it: the devices, the firmware, and
@@ -30,7 +30,7 @@ how the kernel learns what memory and devices exist. Everything else is \textbf{
 same split as layers: hide the hardware first, then interrupts, context switching and the MMU, and above that the code
 is mostly machine independent. The heart of this phase is the \textbf{leak audit} of Task~16.2, a written list of
 every place where x86 shows through; every later task fixes entries on it.
-Stage V ends with Turk-OS 2.0 on three architectures.
+Stage V ends with Kagan 2.0 on three architectures.
 
 \section{Background}
 
@@ -39,7 +39,7 @@ Stage V ends with Turk-OS 2.0 on three architectures.
 Figure~\ref{fig:layers16} shows where Stage V ends up. Generic code calls the functions of \code{include/arch.h} and a
 few inline helpers from per-architecture headers, and three implementations sit below that interface, each on its
 board. On a PC the architecture and the board are entangled (port I/O is an x86 instruction, the PIC is part of every
-PC), so Turk-OS keeps both in \code{kernel/arch/i386}. The ports separate them: their devices are found at boot, so
+PC), so Kagan keeps both in \code{kernel/arch/i386}. The ports separate them: their devices are found at boot, so
 their drivers can live in \code{kernel/drivers} and serve any board that has the device.
 
 \begin{figure}[htbp]
@@ -50,7 +50,7 @@ their drivers can live in \code{kernel/drivers} and serve any board that has the
   port/.style={arch, draw=tkViolet!85!black, fill=tkViolet!8},
   board/.style={tkbox, fill=white, text width=4.25cm, minimum height=1.55cm}]
   \node[tkok, text width=13.7cm, minimum height=1.0cm] (gen) at (0,0)
-    {\textbf{generic kernel}: scheduler, VMM and copy-on-write, system calls, signals, VFS, TurkFS, buffer cache, tty,
+    {\textbf{generic kernel}: scheduler, VMM and copy-on-write, system calls, signals, VFS, KaganFS, buffer cache, tty,
      \code{kprintf}, ktests; drivers for devices that any board may have (16550 core, virtio-blk, RAM disk, block layer)};
   \node[tkhi, text width=13.7cm, minimum height=0.8cm] (ifc) at (0,-1.25)
     {\textbf{the interface}: \code{include/arch.h} (out-of-line functions), the inline headers \code{<arch/trapframe.h>},
@@ -83,7 +83,7 @@ and enter the kernel through one trap mechanism for system calls, faults and int
 \centering\footnotesize\renewcommand{\arraystretch}{1.3}\setlength{\tabcolsep}{4pt}
 \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.15\linewidth} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X@{}}
 \toprule
-\tkth{Mechanism} & \tkth{i386 (Turk-OS 1.0)} & \tkth{riscv32 (Phase 17)} & \tkth{aarch64 (Phase 18)} \\
+\tkth{Mechanism} & \tkth{i386 (Kagan 1.0)} & \tkth{riscv32 (Phase 17)} & \tkth{aarch64 (Phase 18)} \\
 \midrule
 Firmware, entry & BIOS and GRUB; Multiboot hands over in protected mode, paging off & OpenSBI runs in M-mode and jumps to the kernel in S-mode, with the hart ID in \code{a0} and the devicetree's address in \code{a1} & QEMU's loader (or board firmware) starts the kernel at EL1, or at EL2 when virtualisation is enabled \\
 Privilege levels & ring 0 and ring 3 & S-mode and U-mode, with M-mode (firmware) below & EL1 and EL0, with EL2 and EL3 above \\
@@ -111,7 +111,7 @@ word-length-dependent things on the word-length macro, so that a new CPU with a 
 the word-length code. A kernel full of \texttt{\#if (CPU == ...)} becomes hard to read, though, and every port touches
 every file. Linux and MINIX 3 use \textbf{separate files behind one header} instead: a header declares what every
 architecture provides, each architecture implements it in its own directory, and the build picks the directory.
-Turk-OS does the same, and keeps \texttt{\#if} only for orthogonal features in Tanenbaum's sense:
+Kagan does the same, and keeps \texttt{\#if} only for orthogonal features in Tanenbaum's sense:
 \code{ARCH_HAS_ATOMICS} says whether atomic instructions exist, not which CPU this is.
 
 \begin{conceptbox}{The architecture interface}
@@ -168,7 +168,7 @@ The \textbf{structure block} is a stream of 32-bit tokens: \code{FDT_BEGIN_NODE}
 \code{FDT_PROP} (3), the value's length, the offset of the property's name in the \textbf{strings block}, and the
 value; \code{FDT_END_NODE} (2); \code{FDT_NOP} (4); and \code{FDT_END} (9), all padded to four bytes. The
 \textbf{memory reservation block} lists 64-bit (address, size) pairs to keep away from, ending with two zeros. Every
-number is \textbf{big-endian}, and all three Turk-OS targets are little-endian, so every cell is byte-swapped as it is
+number is \textbf{big-endian}, and all three Kagan targets are little-endian, so every cell is byte-swapped as it is
 read.
 
 \begin{figure}[htbp]
@@ -227,7 +227,7 @@ is plain \code{char} signed? & yes & no & no \\
 \label{tab:abi}
 \end{table}
 
-What must \emph{not} change is what leaves the machine. TurkFS has only 8-, 16- and 32-bit fields, which all three
+What must \emph{not} change is what leaves the machine. KaganFS has only 8-, 16- and 32-bit fields, which all three
 little-endian targets lay out the same way, so one disk image works everywhere; a \code{_Static_assert} on each
 on-disk structure's size keeps it so. Elsewhere, use \code{uintptr_t} for an address in an integer, \code{size_t} for a
 size, \code{uint64_t} for physical addresses and lengths from the firmware, and \code{uint8_t} for raw bytes. The best
@@ -567,7 +567,7 @@ register, both through the accessors. The x86 side supplies port I/O accessors (
 (received data available), write \code{0x0B} instead of Phase~2's \code{0x03} to the modem control register (OUT2
 connects the UART's interrupt line to the PIC on a PC), unmask IRQ~4, and call \code{uart16550_irq} from its handler.
 \verify{Boot output appears on the screen and in the \code{-serial stdio} terminal exactly as before. Keys typed into
-the terminal reach \code{tsh} through IRQ~4, with editing and Ctrl+C working as on the PS/2 keyboard.}
+the terminal reach \code{kash} through IRQ~4, with editing and Ctrl+C working as on the PS/2 keyboard.}
 
 \task{Make the generic code 64-bit clean}
 The i386 kernel has been built with \code{-Wall -Wextra -Wformat=2 -Werror} and a format-checked \code{kprintf}
@@ -786,10 +786,10 @@ Benchmarks several per cent slower & Accessors became function calls, or \code{a
   \item What is the difference between the architecture and the board? Why does x86 keep both in one directory?
   \item Why are some parts of the interface inline headers and others functions in \code{include/arch.h}? What would
         happen to the null system call if \code{tf_arg} were a function?
-  \item Where in Turk-OS is an \texttt{\#ifdef} most tempting, and what replaces it?
+  \item Where in Kagan is an \texttt{\#ifdef} most tempting, and what replaces it?
   \item The devicetree is big-endian, and all three targets are little-endian. What would go wrong without
         \code{fdt_be32}, and how would the failure show?
-  \item Why can one TurkFS image work on all three targets, and which kinds of change to its structures would break
+  \item Why can one KaganFS image work on all three targets, and which kinds of change to its structures would break
         that?
   \item Which subsystems needed no change at all, and what does that say about their design?
 \end{enumerate}
@@ -798,7 +798,7 @@ Benchmarks several per cent slower & Accessors became function calls, or \code{a
 \section{Extensions}
 
 Add a fourth architecture that is not a machine: \code{kernel/arch/host} runs the generic kernel as a Linux process,
-with \code{mmap} standing in for page tables, so the ktests of the heap, the scheduler and TurkFS run in a second under
+with \code{mmap} standing in for page tables, so the ktests of the heap, the scheduler and KaganFS run in a second under
 the sanitizers (User-Mode Linux does this for all of Linux). Run \code{make check-generic} and the host tests from a
 Git pre-commit hook. Generate the system call table, the user stubs of every architecture and \code{docs/syscalls.md}
 from one list. Or add Clang to \code{check-generic}: \code{clang --target=riscv32-unknown-elf} and

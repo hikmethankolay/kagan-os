@@ -1,11 +1,11 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 \phaseheader{0}{Foundations and Toolchain}{Set up the workshop: a cross compiler, an emulator, a debugger, and the C habits a kernel needs}{0}{5}
 
 \ataglance{2--3 weeks}{1}{Basic C and a Fedora Linux machine}{A working \texttt{i686-elf} cross toolchain built from verified sources, QEMU and GDB,
-a Git repository with the Turk-OS skeleton, and a small C library (strings, bitmaps, lists, ring buffer) with unit tests.
+a Git repository with the Kagan skeleton, and a small C library (strings, bitmaps, lists, ring buffer) with unit tests.
 The kernel reuses that library.}
 
 \section{Scope and motivation}
@@ -36,7 +36,7 @@ thing: the OS as an \emph{extended machine} that hides ugly hardware behind clea
 The CPU has at least two privilege levels. Code in \textbf{kernel mode} (ring 0 on x86) can do anything: touch any
 memory, talk to devices, disable interrupts. Code in \textbf{user mode} (ring 3) can't, and if it tries, the CPU
 stops it and hands control to the kernel. This hardware-enforced split is what lets an OS protect itself and its
-programs from each other (\OSC\,\S1.4). For the first nine phases all Turk-OS code runs in ring 0. Ring 3 arrives
+programs from each other (\OSC\,\S1.4). For the first nine phases all Kagan code runs in ring 0. Ring 3 arrives
 in Phase 10.
 \end{conceptbox}
 
@@ -138,7 +138,7 @@ linker scripts throughout the project.
 \end{tabular}
 \end{center}
 
-\subsection{What Turk-OS defends, and against whom}
+\subsection{What Kagan defends, and against whom}
 
 A kernel is also the part of the system that must not be fooled. Three words describe that job. An \textbf{asset} is
 something worth protecting: kernel memory and control flow, the memory of other processes, the files on disk, the
@@ -163,7 +163,7 @@ Suggested order: \OSTEP, then \MOS\,\S1.3, then \LOB.
 \could & \OSC & \S1.9 \emph{Kernel Data Structures}; \S2.5 \emph{Linkers and Loaders} & 36--40, 75--77 & Background for the warm-up library and the build pipeline. \\
 \could & \OSDI & \S1.1--1.2 (what an OS is, history, history of MINIX 3) & 4--19 & Origins of MINIX and its design goals. \\
 \should & \LKD & Ch.~2, \emph{A Beast of a Different Nature}: no libc, GNU C, no memory protection, no floating point, a small fixed stack & 16--21 & Why kernel C differs from ordinary C; context for the warm-up library. \\
-\could & \LKP & Ch.~1, \emph{Static analysis tools for the Linux kernel} & 34--35 & Static analysers such as sparse and cppcheck, applicable to Turk-OS code. \\
+\could & \LKP & Ch.~1, \emph{Static analysis tools for the Linux kernel} & 34--35 & Static analysers such as sparse and cppcheck, applicable to Kagan code. \\
 \end{readingplan}
 
 \section{Implementation}
@@ -250,14 +250,14 @@ When a build breaks after an upgrade, this file tells you what changed. Add the 
 your distribution updates them, and edit the file whenever you rebuild the cross compiler.
 
 \begin{lst}{sh}{terminal}
-cd Turk-OS                     # your project folder
+cd kagan-os                     # your project folder
 mkdir -p boot kernel lib include tests tools user docs
 git init
 printf 'build/\n*.o\n*.elf\n*.bin\n*.iso\n*.img\n' > .gitignore
 { i686-elf-gcc --version | head -n1; i686-elf-ld --version | head -n1
   nasm -v; qemu-system-i386 --version | head -n1
   grub2-mkrescue --version; } > docs/toolchain.lock
-git add . && git commit -m "Turk-OS: source skeleton and design documents"
+git add . && git commit -m "Kagan: source skeleton and design documents"
 \end{lst}
 \verify{\code{git log} shows the first commit, and \code{docs/toolchain.lock} lists GCC, binutils, NASM, QEMU and
 GRUB with a version each.}
@@ -333,7 +333,7 @@ and which register holds the return value.}
 
 \task{Smoke-test QEMU and GDB}
 Start the emulated PC with nothing to boot: \code{qemu-system-i386}. The SeaBIOS firmware tries every device and reports
-that there is no bootable disk. That screen is the \emph{exact} point where Turk-OS code takes over in Phase 1. Also open the QEMU monitor (\code{Ctrl+Alt+2} in the window, or start with \code{-monitor stdio}) and
+that there is no bootable disk. That screen is the \emph{exact} point where Kagan code takes over in Phase 1. Also open the QEMU monitor (\code{Ctrl+Alt+2} in the window, or start with \code{-monitor stdio}) and
 run \code{info registers}.
 \verify{The \code{info registers} output shows the values of \code{EIP} and \code{CR0}.}
 
@@ -342,14 +342,14 @@ Create \code{docs/journal.md}. For every session, record the date, what was trie
 concluded. When a bug resists a quick fix, record the hypothesis before each attempt. The record is what makes a
 regression traceable later.
 
-\task{Write down what Turk-OS defends}
+\task{Write down what Kagan defends}
 Create \code{docs/security/threat-model.md} with half a page: the assets, the adversaries, and an explicit list of
-what Turk-OS does \emph{not} defend against. The out-of-scope list matters as much as the rest. An assumption
+what Kagan does \emph{not} defend against. The out-of-scope list matters as much as the rest. An assumption
 that is not written down is easily forgotten. Keep it short; Phase 10 turns it into a full threat model, and
 later phases add lines to it.
 
 \begin{lst}{plain}{docs/security/threat-model.md (stub)}
-# Turk-OS threat model (stub)
+# Kagan threat model (stub)
 
 Assets: kernel memory and control flow; other processes' memory;
 file contents and permissions on disk; kernel availability;
@@ -361,7 +361,7 @@ a tampered toolchain or source download.
 
 Out of scope:
 - physical attackers and the boot chain (BIOS + GRUB, no secure boot)
-- network attackers (Turk-OS has no network stack)
+- network attackers (Kagan has no network stack)
 - malicious hardware and DMA (devices are trusted; QEMU emulates them)
 - side channels such as Spectre/Meltdown (single user, emulated machine)
 \end{lst}
@@ -385,7 +385,7 @@ Sanitizer reports \code{heap-buffer-overflow} in the warm-up \code{strncpy} & Of
 \begin{milestonebox}[Workshop ready]
 \begin{checklist}
   \item \code{i686-elf-gcc}, \code{i686-elf-ld}, \code{nasm}, \code{qemu-system-i386} and \code{gdb} run from the editor's terminal.
-  \item The Turk-OS repository exists with the skeleton folders and at least one commit.
+  \item The Kagan repository exists with the skeleton folders and at least one commit.
   \item The warm-up library passes its tests under AddressSanitizer and UBSan.
   \item C has been compiled to assembly, and the output of a small function is annotated.
   \item QEMU reaches the SeaBIOS ``no bootable device'' screen, and \code{info registers} works in the monitor.
@@ -398,7 +398,7 @@ Sanitizer reports \code{heap-buffer-overflow} in the warm-up \code{strncpy} & Of
 
 \begin{questionbox}
 \begin{enumerate}
-  \item What are the three big ideas of \OSTEP, and which Turk-OS phases correspond to each?
+  \item What are the three big ideas of \OSTEP, and which Kagan phases correspond to each?
   \item What is the difference between kernel mode and user mode, and who enforces it?
   \item Which C headers are still available in freestanding mode, and why exactly those?
   \item What can the compiler do to a non-\code{volatile} pointer access that would break a device driver?

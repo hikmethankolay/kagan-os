@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 \phaseheader{12}{Storage: Block Devices, ATA Driver and Buffer Cache}{Make data survive a reboot: talk to a hard disk, organise devices behind one interface, and cache blocks in memory}{77}{83}
@@ -7,11 +7,11 @@
 \ataglance{2 weeks}{4}{Phase 9: semaphores and mutexes; Phase 4: IRQ handling; Phase 7: the heap and lists}{An ATA PIO driver that identifies,
 reads and writes the QEMU disk (first polling, then interrupt-driven), a block device layer with partitions from the
 MBR, a RAM disk from a boot module, a buffer cache with LRU replacement and write-back, and \code{lsblk} and
-\code{hexdump} commands. Data written by Turk-OS survives a reboot and can be checked from Linux.}
+\code{hexdump} commands. Data written by Kagan survives a reboot and can be checked from Linux.}
 
 \section{Scope and motivation}
 
-Everything Turk-OS knows vanishes when QEMU exits. \OSTEP's third big idea, \textbf{persistence}, starts here: a
+Everything Kagan knows vanishes when QEMU exits. \OSTEP's third big idea, \textbf{persistence}, starts here: a
 driver for a disk, and the layers that let the rest of the kernel use disks without knowing how they work. The file
 system in Phase 13 sits directly on top of this phase and never touches hardware.
 
@@ -36,7 +36,7 @@ so none of the timing is real, but the interface is the same as on a real PC.
 
 \subsection{The layers of I/O software}
 
-\MOS\,\S5.3 divides I/O software into four layers, and Turk-OS follows it (Figure~\ref{fig:layers}). The
+\MOS\,\S5.3 divides I/O software into four layers, and Kagan follows it (Figure~\ref{fig:layers}). The
 \textbf{interrupt handler} does the minimum and wakes whoever is waiting. The \textbf{device driver} knows one kind of
 hardware. The \textbf{device-independent} layer (block devices, partitions, the buffer cache) gives every driver the
 same interface and does the work common to all of them. \textbf{User-level} software (the file system, then
@@ -48,7 +48,7 @@ programs) only ever sees that interface.
   n/.style={font=\sffamily\scriptsize, text=tkGray, anchor=west, align=left}]
   \node[l, fill=tkGreen!10] (u) at (0,0) {user process: \code{read(fd, buf, n)}};
   \node[l, fill=tkRed!8, below=2pt of u] (s) {system call layer (Phase 10)};
-  \node[l, fill=tkBlue!8, below=2pt of s] (f) {VFS and TurkFS: file offset $\rightarrow$ block number (Phase 13)};
+  \node[l, fill=tkBlue!8, below=2pt of s] (f) {VFS and KaganFS: file offset $\rightarrow$ block number (Phase 13)};
   \node[l, fill=tkAmber!14, below=2pt of f] (c) {\textbf{buffer cache}: \code{bread(dev, block)}, LRU, write-back};
   \node[l, fill=tkAmber!14, below=2pt of c] (b) {\textbf{block layer}: \code{struct blockdev}, partitions (hda1 = hda + offset)};
   \node[l, fill=tkAmber!14, below=2pt of b] (d) {\textbf{drivers}: ATA disk, RAM disk};
@@ -128,10 +128,10 @@ read and write requests as messages. Its \code{w_identify} does what Task~12.2 d
 \code{com_out} issues commands and waits for the interrupt. All block drivers share the main loop in
 \texttt{drivers/libdriver/driver.c (11000)}: that is the device-independent layer, done as a library. The RAM disk is
 \texttt{drivers/memory/memory.c (11600)}. The block cache is part of the file-system server, in
-\texttt{servers/fs/cache.c (22400)}, with \code{get_block} and \code{put_block} playing the roles of Turk-OS's
+\texttt{servers/fs/cache.c (22400)}, with \code{get_block} and \code{put_block} playing the roles of Kagan's
 \code{bread} and \code{brelse}.
 
-\par\smallskip\textbf{Linux, for comparison.} \LKD Linux describes I/O with \code{bio} structures in request queues that an I/O scheduler reorders, completes requests in bottom halves, and long ago folded its buffer cache into the unified \textbf{page cache}. Turk-OS keeps a buffer cache because TurkFS works in blocks; the page cache is listed under Extensions.
+\par\smallskip\textbf{Linux, for comparison.} \LKD Linux describes I/O with \code{bio} structures in request queues that an I/O scheduler reorders, completes requests in bottom halves, and long ago folded its buffer cache into the unified \textbf{page cache}. Kagan keeps a buffer cache because KaganFS works in blocks; the page cache is listed under Extensions.
 \end{minixbox}
 
 \section{Implementation}
@@ -323,7 +323,7 @@ Partition data lands in the wrong place & The partition offset is applied twice,
   \item Requests beyond the size reported by IDENTIFY fail with \code{-EIO}, and invalid or overlapping MBR entries create no device.
   \item The RAM disk works from a boot module.
   \item The buffer cache serves repeated reads from memory and writes dirty blocks back on \code{bsync}.
-  \item Data written by Turk-OS survives a reboot and is visible with \code{hexdump -C} on the host.
+  \item Data written by Kagan survives a reboot and is visible with \code{hexdump -C} on the host.
 \end{checklist}
 \end{milestonebox}
 
@@ -332,7 +332,7 @@ Partition data lands in the wrong place & The partition offset is applied twice,
   \item What are the three components of disk access time, and which one does sequential access avoid?
   \item Compare programmed I/O and DMA. What does the CPU do during each?
   \item Why must the driver check DRQ before every sector rather than once per command?
-  \item What does the device-independent block layer provide? Give two concrete examples in Turk-OS.
+  \item What does the device-independent block layer provide? Give two concrete examples in Kagan.
   \item What does the buffer cache guarantee besides speed? What is the risk of write-back caching?
   \item Describe the layout of an MBR and one partition entry.
 \end{enumerate}
@@ -345,6 +345,6 @@ bus-master DMA engine so the CPU no longer copies every word. Queue requests and
 (\OSTEP\,\S37.5, \MOS\,\S5.4.3). Add read-ahead: when block $n$ is read, start reading $n+1$ in the background. Or write
 a \code{virtio-blk} driver, which is how modern virtual machines expose disks, and compare its speed with ATA.
 
-\nextphase{13}{File Systems: VFS, initrd and TurkFS}
+\nextphase{13}{File Systems: VFS, initrd and KaganFS}
 \booklegend
 \end{document}

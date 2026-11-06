@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 \phaseheader{5}{Physical Memory Management}{Determine which RAM really exists, and hand it out and take it back in 4 KiB page frames}{28}{34}
@@ -29,7 +29,7 @@ where the kernel gains \textbf{automated tests}, because a memory allocator that
 
 \OSTEP chapter 13 introduces the \textbf{address space}, the memory a program believes it has, and explains why the
 OS must virtualise memory: isolation, protection, and the convenience of every program seeing memory starting at
-zero. Turk-OS builds that illusion in Phases 6 and 10. Underneath it, the OS still manages real memory in fixed-size
+zero. Kagan builds that illusion in Phases 6 and 10. Underneath it, the OS still manages real memory in fixed-size
 units called \textbf{page frames}. On x86 a frame is 4\,KiB, and frame number $n$ covers physical addresses
 $n \times 4096$ to $n \times 4096 + 4095$. Frame number and address convert with a shift by 12: \code{frame = addr >> 12}.
 
@@ -89,7 +89,7 @@ Detect double free & trivial: the bit is already 0 & needs extra bookkeeping \\
 \end{tabularx}
 \end{center}
 
-Turk-OS starts with a bitmap: it makes bugs visible, supports the contiguous allocations that DMA needs in Phase 12,
+Kagan starts with a bitmap: it makes bugs visible, supports the contiguous allocations that DMA needs in Phase 12,
 and reuses the Phase 0 bitmap code. A free-list cache can go in front of it later if profiling justifies one.
 
 \section{References}
@@ -110,11 +110,11 @@ and reuses the Phase 0 bitmap code. A free-list cache can go in front of it late
 \begin{minixbox}
 MINIX 3 as printed in \OSDI does not use paging at all: the process manager allocates each process a contiguous
 chunk of physical memory from a list of \emph{holes}. The hole list is explained on pp.~431 and 473--474 of \OSDI;
-the file that implements it, \texttt{servers/pm/alloc.c}, is described there but not included in the printed listing. That is the linked-list scheme from \MOS\,\S3.2.3 used for whole processes. Turk-OS uses
+the file that implements it, \texttt{servers/pm/alloc.c}, is described there but not included in the printed listing. That is the linked-list scheme from \MOS\,\S3.2.3 used for whole processes. Kagan uses
 paging instead, so it only ever needs single 4\,KiB frames, apart from the occasional contiguous DMA buffer. The
 comparison shows why paging won: no external fragmentation, and no need to move processes around.
 
-\par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux manages physical memory with a \textbf{buddy allocator}: per zone, free lists of blocks of $2^{\mathit{order}}$ pages that are split on allocation and merged with their buddy on free. A bitmap is simpler, which is why Turk-OS builds it first, but the buddy allocator finds contiguous blocks without a scan (Task~5.7).
+\par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux manages physical memory with a \textbf{buddy allocator}: per zone, free lists of blocks of $2^{\mathit{order}}$ pages that are split on allocation and merged with their buddy on free. A bitmap is simpler, which is why Kagan builds it first, but the buddy allocator finds contiguous blocks without a scan (Task~5.7).
 \end{minixbox}
 
 \section{Implementation}

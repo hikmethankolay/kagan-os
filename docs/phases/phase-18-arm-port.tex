@@ -1,12 +1,12 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
-\phaseheader{18}{The ARM Port}{Port Turk-OS to 64-bit ARM: exception levels, the GIC, a three-level MMU with two translation bases, a 64-bit clean kernel, and finally Turk-OS 2.0 on three architectures}{60}{100}
+\phaseheader{18}{The ARM Port}{Port Kagan to 64-bit ARM: exception levels, the GIC, a three-level MMU with two translation bases, a 64-bit clean kernel, and finally Kagan 2.0 on three architectures}{60}{100}
 
 \ataglance{5--6 weeks (the Raspberry Pi 4 in Task 18.12 is optional)}{5}{Phase 17 complete: the RISC-V port works, so the
 architecture interface has been tested once; \code{make ARCH=aarch64 check-generic} from Task 16.9 still
-passes}{Turk-OS on \code{qemu-system-aarch64 -machine virt} booting to \code{tsh} with EL1 exception vectors, GICv2,
+passes}{Kagan on \code{qemu-system-aarch64 -machine virt} booting to \code{kash} with EL1 exception vectors, GICv2,
 the generic timer, the PL011 UART, the 39-bit VMSAv8-64 MMU with \code{TTBR0} and \code{TTBR1}, \code{svc} system
 calls, an ELF64 loader, virtio-blk, \code{make ARCH=aarch64 test}, and the v2.0 release for three architectures.}
 
@@ -19,8 +19,8 @@ is 64 bits wide, the MMU has three levels and two base registers, every mapping 
 processor reorders memory accesses unless barriers forbid it. If the interface survives this port, it is really
 generic.
 
-This is also the last phase of the roadmap. It ends with one TurkFS image that boots on three architectures, the
-same benchmarks measured on all of them, a written account of the port, and the Turk-OS 2.0 tag. The MMU
+This is also the last phase of the roadmap. It ends with one KaganFS image that boots on three architectures, the
+same benchmarks measured on all of them, a written account of the port, and the Kagan 2.0 tag. The MMU
 (Task 18.6) is the riskiest part: an AArch64 MMU that is set up slightly wrong usually
 stops the machine without a word, just as x86 paging did in Phase 6.
 
@@ -41,7 +41,7 @@ names the lowest exception level allowed to use the register.
 The calling convention is the AAPCS64. Arguments go in \code{x0}--\code{x7} and the result comes back in \code{x0};
 \code{x19}--\code{x28} are callee-saved; \code{x29} is the frame pointer and \code{x30} the link register;
 \code{sp} must stay 16-byte aligned. The data model is \textbf{LP64}: \code{int} stays 32 bits, but \code{long},
-\code{size_t} and every pointer become 64 bits. Table~\ref{tab:isas} puts the three architectures of Turk-OS side by
+\code{size_t} and every pointer become 64 bits. Table~\ref{tab:isas} puts the three architectures of Kagan side by
 side.
 
 \begin{table}[htbp]
@@ -69,7 +69,7 @@ page table base & \code{CR3} & \code{satp} & \code{TTBR0_EL1} and \code{TTBR1_EL
 
 AArch64 replaces x86's rings and RISC-V's modes with four \textbf{exception levels} (Figure~\ref{fig:els}). EL0 runs
 programs, EL1 an operating system kernel, EL2 a hypervisor and EL3 the secure monitor firmware. An exception can only
-move execution to the same or a higher level, and \code{eret} is the only way down. Turk-OS runs at EL1 and its
+move execution to the same or a higher level, and \code{eret} is the only way down. Kagan runs at EL1 and its
 programs at EL0. QEMU's \code{virt} board has no EL2 or EL3 unless requested, so by default the kernel starts
 at EL1; with \code{-machine virt,virtualization=on}, and on a Raspberry Pi 4, it starts at EL2 and must step down.
 
@@ -78,8 +78,8 @@ at EL1; with \code{-machine virt,virtualization=on}, and on a Raspberry Pi 4, it
 \begin{tikzpicture}[lv/.style={tkbox, minimum width=6.6cm, text width=6.4cm, minimum height=0.72cm, align=left},
   n/.style={tknote, anchor=west, align=left, text width=5.6cm}]
   \node[lv, fill=tkGray!12] (e3) at (0,0) {\textbf{EL3}\enspace secure monitor (firmware, TrustZone)};
-  \node[lv, fill=tkGray!12, below=3pt of e3] (e2) {\textbf{EL2}\enspace hypervisor: unused by Turk-OS};
-  \node[tkhi, minimum width=6.6cm, text width=6.4cm, minimum height=0.72cm, align=left, below=3pt of e2] (e1) {\textbf{EL1}\enspace Turk-OS: \code{VBAR_EL1}, \code{TTBR1_EL1}, \code{SP_EL1}};
+  \node[lv, fill=tkGray!12, below=3pt of e3] (e2) {\textbf{EL2}\enspace hypervisor: unused by Kagan};
+  \node[tkhi, minimum width=6.6cm, text width=6.4cm, minimum height=0.72cm, align=left, below=3pt of e2] (e1) {\textbf{EL1}\enspace Kagan: \code{VBAR_EL1}, \code{TTBR1_EL1}, \code{SP_EL1}};
   \node[tkok, minimum width=6.6cm, text width=6.4cm, minimum height=0.72cm, align=left, below=0.75cm of e1] (e0) {\textbf{EL0}\enspace programs: \code{TTBR0_EL1}, \code{SP_EL0}};
   \node[n, right=0.4cm of e3] {absent on QEMU \code{virt} unless \code{secure=on}; on the Pi 4 the firmware's stub};
   \node[n, right=0.4cm of e2] {with \code{virtualization=on}, and on the Pi 4, the kernel starts here and drops to EL1};
@@ -88,7 +88,7 @@ at EL1; with \code{-machine virt,virtualization=on}, and on a Raspberry Pi 4, it
   \draw[tkarrow] ([xshift=-1.2cm]e0.north) -- node[left, tknote] {exception} ([xshift=-1.2cm]e1.south);
   \draw[tkarrow, tkRed] ([xshift=1.2cm]e1.south) -- node[right, tknote] {\code{eret}} ([xshift=1.2cm]e0.north);
 \end{tikzpicture}
-\caption{The four exception levels and where Turk-OS uses them.}
+\caption{The four exception levels and where Kagan uses them.}
 \label{fig:els}
 \end{figure}
 
@@ -109,7 +109,7 @@ saving registers is entirely the kernel's job.
 
 The vector table is 2\,KiB long and must be 2\,KiB aligned. It has four groups of four entries, and each entry is
 0x80 bytes, room for 32 instructions (Figure~\ref{fig:vectors}). The group says where the exception came from; the
-entry says what kind it is. Turk-OS uses four of the sixteen and treats the rest as fatal.
+entry says what kind it is. Kagan uses four of the sixteen and treats the rest as fatal.
 
 \begin{figure}[htbp]
 \centering
@@ -128,8 +128,8 @@ entry says what kind it is. Turk-OS uses four of the sixteen and treats the rest
   \node[vx] at (4.3,-1.24) {0x500}; \node[vx] at (6.45,-1.24) {0x580};
   \node[vx] at (0,-1.86) {0x600}; \node[vx] at (2.15,-1.86) {0x680}; \node[vx] at (4.3,-1.86) {0x700}; \node[vx] at (6.45,-1.86) {0x780};
 \end{tikzpicture}
-\caption{The AArch64 vector table: offsets from \code{VBAR_EL1}. Coloured entries are the ones Turk-OS handles;
-grey ones mean a bug (FIQ and SError are not used, and Turk-OS runs no 32-bit code).}
+\caption{The AArch64 vector table: offsets from \code{VBAR_EL1}. Coloured entries are the ones Kagan handles;
+grey ones mean a bug (FIQ and SError are not used, and Kagan runs no 32-bit code).}
 \label{fig:vectors}
 \end{figure}
 
@@ -137,10 +137,10 @@ grey ones mean a bug (FIQ and SError are not used, and Turk-OS runs no 32-bit co
 \centering\small\renewcommand{\arraystretch}{1.2}
 \begin{tabularx}{\linewidth}{@{}l >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X@{}}
 \toprule
-\tkth{EC} & \tkth{Meaning} & \tkth{What Turk-OS does} \\
+\tkth{EC} & \tkth{Meaning} & \tkth{What Kagan does} \\
 \midrule
 \code{0x00} & unknown reason: an undefined instruction, or \code{hlt} without semihosting & \code{SIGILL}, or panic in the kernel \\
-\code{0x07} & SVE, SIMD or floating-point instruction trapped by \code{CPACR_EL1.FPEN} & \code{SIGILL}: Turk-OS 2.0 uses no FP (Task 18.2) \\
+\code{0x07} & SVE, SIMD or floating-point instruction trapped by \code{CPACR_EL1.FPEN} & \code{SIGILL}: Kagan 2.0 uses no FP (Task 18.2) \\
 \code{0x15} & \code{svc} executed in AArch64 state & system call; \code{ELR_EL1} already points past it \\
 \code{0x20}, \code{0x21} & instruction abort from EL0, from EL1 & page fault on an instruction fetch \\
 \code{0x24}, \code{0x25} & data abort from EL0, from EL1 & page fault; ISS bit 6 (WnR) says write \\
@@ -148,7 +148,7 @@ grey ones mean a bug (FIQ and SError are not used, and Turk-OS runs no 32-bit co
 \code{0x3C} & \code{brk} executed in AArch64 state & debug print; \code{ELR_EL1} points at the \code{brk} itself \\
 \bottomrule
 \end{tabularx}
-\caption{The exception classes in \code{ESR_EL1} bits 31:26 that Turk-OS decodes. For aborts, the low six bits
+\caption{The exception classes in \code{ESR_EL1} bits 31:26 that Kagan decodes. For aborts, the low six bits
 (the fault status code) give the type and the table level: \code{0x04}--\code{0x07} translation fault, \code{0x08}
 plus level access-flag fault, \code{0x0C} plus level permission fault.}
 \label{tab:esr}
@@ -167,7 +167,7 @@ PPI), the number within that type, and flags. So SPI 1 is INTID 33. INTID 1023 m
 
 The \textbf{generic timer} is built into every core, so there is no PIT or SBI call. \code{CNTFRQ_EL0} holds the
 counter frequency, \code{CNTVCT_EL0} the current count, and each timer has a control register (\code{CNTV_CTL_EL0}:
-enable and mask bits) and a down-counter (\code{CNTV_TVAL_EL0}) that raises its PPI when it reaches zero. Turk-OS uses
+enable and mask bits) and a down-counter (\code{CNTV_TVAL_EL0}) that raises its PPI when it reaches zero. Kagan uses
 the \textbf{virtual} timer, INTID 27, which Linux also uses at EL1; the physical EL1 timer is INTID 30. Read the
 frequency, never assume it: QEMU gives a Cortex-A72 62.5\,MHz, while newer CPU models get 1\,GHz.
 
@@ -227,14 +227,14 @@ physical address.}
   \node[n, right=6pt of k] {\code{TTBR1_EL1}: one set of\\tables for the whole system};
   \node[n, right=6pt of u] {\code{TTBR0_EL1}: changed on\\every process switch};
 \end{tikzpicture}
-\caption{The Turk-OS address space on AArch64. Compare Phase 10's Figure: the user half no longer has to share a page
+\caption{The Kagan address space on AArch64. Compare Phase 10's Figure: the user half no longer has to share a page
 directory with the kernel.}
 \label{fig:as64}
 \end{figure}
 
 This split removes a chore from x86 and RISC-V, where every new page directory needed copies of the kernel's
 entries. On AArch64 a process's level-1 table contains only user mappings, and \code{arch_mmu_switch} changes only
-\code{TTBR0_EL1}. Table~\ref{tab:pte} compares the leaf entries of the three MMUs that Turk-OS programs.
+\code{TTBR0_EL1}. Table~\ref{tab:pte} compares the leaf entries of the three MMUs that Kagan programs.
 
 \begin{table}[htbp]
 \centering\small\renewcommand{\arraystretch}{1.2}
@@ -262,7 +262,7 @@ away, not to grant one.}
 
 On x86 and on QEMU's RISC-V board the kernel never states what kind of memory an address is. On AArch64 every mapping
 names a \textbf{memory type} through its AttrIndx field, which selects one of eight attribute bytes in
-\code{MAIR_EL1}. Turk-OS needs two. \textbf{Normal} memory (attribute \code{0xFF}: write-back cacheable) may be cached,
+\code{MAIR_EL1}. Kagan needs two. \textbf{Normal} memory (attribute \code{0xFF}: write-back cacheable) may be cached,
 read speculatively, and have its accesses merged and reordered: right for RAM, disastrous for a device, where a
 read can pop a byte out of a FIFO and the order of writes is the protocol. \textbf{Device-nGnRnE} memory (attribute
 \code{0x00}) forbids all of that: no gathering of accesses, no reordering, no early write acknowledgement. Every MMIO
@@ -281,7 +281,7 @@ translation, \code{dsb ish} to wait for that, and \code{isb}.
 \begin{conceptbox}{The access flag}
 A descriptor whose AF bit is 0 is valid but raises an access-flag fault the first time it is used. Armv8.0 never sets
 AF in hardware (later versions can, if \code{TCR_EL1.HA} asks for it). An operating system can clear AF on purpose to
-learn which pages are in use, which is the information \OSTEP's clock algorithm needs. Turk-OS simply sets AF in every
+learn which pages are in use, which is the information \OSTEP's clock algorithm needs. Kagan simply sets AF in every
 descriptor it writes; forgetting to do so is the classic first bug of an AArch64 MMU.
 \end{conceptbox}
 
@@ -357,7 +357,7 @@ QEMU starts a kernel in one of two ways. An ELF file is booted ``bare-metal'': t
 the highest exception level, \code{x0} holds nothing useful, and the devicetree waits at the start of RAM. Any other
 file is booted with the \textbf{Linux boot protocol}: \code{x0} holds the devicetree's physical address, an
 \code{-initrd} is loaded and listed in \code{/chosen}, and the CPU starts at EL1, or at EL2 if the board has it.
-The Raspberry Pi firmware does the same, so Turk-OS uses the Linux protocol on both.
+The Raspberry Pi firmware does the same, so Kagan uses the Linux protocol on both.
 \verify{The decoded tree shows \code{memory@40000000} with 128\,MiB, \code{pl011@9000000} with
 \code{interrupts = <0x00 0x01 0x04>}, an \code{intc@8000000} compatible with \code{arm,cortex-a15-gic} (QEMU's name for a
 GICv2), a \code{timer} node with four PPIs, and 32 \code{virtio_mmio} nodes. Note in \code{docs/porting.md} which of
@@ -368,7 +368,7 @@ them the kernel reads.}
 the Pi firmware. With \code{text_offset} 0, both load it 2\,MiB above a 2\,MiB-aligned base, that is at
 \code{0x40200000} on QEMU. Then core 0 continues and any other core parks. On QEMU the other cores are not even
 running: they start powered off and wait for a PSCI \code{CPU_ON} call (a firmware call through \code{hvc} or
-\code{smc}) that Turk-OS never makes. On the Pi they wait in the firmware's spin loop. Checking \code{MPIDR_EL1} costs
+\code{smc}) that Kagan never makes. On the Pi they wait in the firmware's spin loop. Checking \code{MPIDR_EL1} costs
 three instructions and is safe on any board.
 
 If \code{CurrentEL} says EL2, prepare EL1 and step down with \code{eret}: \code{HCR_EL2.RW} makes EL1 a 64-bit level,
@@ -393,7 +393,7 @@ primary:
     mov   x19, x0                   // keep the FDT pointer safe
     mrs   x1, mpidr_el1
     and   x1, x1, #0xff             // Aff0: this core's number in the cluster
-    cbnz  x1, park                  // only core 0 boots Turk-OS
+    cbnz  x1, park                  // only core 0 boots Kagan
     mrs   x1, CurrentEL
     lsr   x1, x1, #2                // CurrentEL[3:2] holds the exception level
     cmp   x1, #2
@@ -439,11 +439,11 @@ park:
     b     park
 \end{lst}
 
-\begin{decisionbox}{No floating point in Turk-OS 2.0}
+\begin{decisionbox}{No floating point in Kagan 2.0}
 Compilers use the 32 SIMD registers for ordinary code too: \code{memcpy}, structure copies, vectorised loops. If the
 kernel did, every system call would silently destroy user registers. So the kernel is built with
 \code{-mgeneral-regs-only}, and \code{CPACR_EL1.FPEN} (bits 21:20) stays \code{00}, so any FP or SIMD instruction
-traps with EC \code{0x07}. The userland is built with \code{-mgeneral-regs-only} as well, since Turk-libc has no
+traps with EC \code{0x07}. The userland is built with \code{-mgeneral-regs-only} as well, since Kagan libc has no
 floating point. A program that uses FP anyway gets \code{SIGILL} instead of corrupting another process's registers.
 Real FP support (\code{FPEN} = \code{0b11}, and saving \code{q0}--\code{q31}, \code{FPCR} and \code{FPSR} per task)
 is a stretch goal.
@@ -463,7 +463,7 @@ LDSCRIPT    := kernel/arch/aarch64/kernel.ld
 QEMU        := qemu-system-aarch64
 QEMU_FLAGS  := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M -nographic \
                -kernel $(BUILD)/kernel8.img -global virtio-mmio.force-legacy=false \
-               -drive if=none,format=raw,file=$(BUILD)/turkfs.img,id=hd0 -device virtio-blk-device,drive=hd0
+               -drive if=none,format=raw,file=$(BUILD)/kaganfs.img,id=hd0 -device virtio-blk-device,drive=hd0
 QEMU_TEST_FLAGS  := -semihosting-config enable=on,target=native -append test
 TEST_PASS_STATUS := 0               # QEMU's exit status when all tests pass (i386: 1)
 
@@ -882,7 +882,7 @@ void arch_tlb_flush(uintptr_t va)
 
 A new mapping needs no TLB flush, because the TLBs never hold entries that fault; \code{arch_mmu_protect} and
 \code{arch_mmu_unmap} change live entries and must call \code{arch_tlb_flush}. \code{arch_mmu_switch} writes
-\code{TTBR0_EL1}, executes \code{isb}, and, since Turk-OS uses no ASIDs yet, flushes the TLB with
+\code{TTBR0_EL1}, executes \code{isb}, and, since Kagan uses no ASIDs yet, flushes the TLB with
 \code{tlbi vmalle1}, \code{dsb ish} and \code{isb}. Two more differences from x86 and RISC-V: Armv8.0 has no
 equivalent of \code{sstatus.SUM}, so with \code{arch_uaccess_begin} and \code{arch_uaccess_end} empty,
 \code{copy_from_user} reads user pages directly, and its range check now ends at \code{USER_TOP}.
@@ -919,7 +919,7 @@ monitor command shows Device attributes only on device pages and \code{PXN} clea
 
 \task{Sixty-four bits everywhere}
 Task 16.9 made the generic code compile cleanly for aarch64, but compiling is not running. This is the first time
-Turk-OS executes with 64-bit pointers, and some bugs only show at run time. Fix them in generic code, not in
+Kagan executes with 64-bit pointers, and some bugs only show at run time. Fix them in generic code, not in
 \code{arch/}, and run the fixed code on i386 and riscv32 too. The bugs this port typically finds:
 
 \begin{center}
@@ -1077,7 +1077,7 @@ registers come in low and high halves; on RV32 the high halves were always 0, no
 on RISC-V, \code{dsb st} here.
 
 The userland needs a start file, the system call stubs, \code{user/arch/aarch64/user.ld} (programs at
-\code{0x00400000}, as everywhere) and the same \code{-mgeneral-regs-only}. Then rebuild Turk-libc, \code{tsh} and the
+\code{0x00400000}, as everywhere) and the same \code{-mgeneral-regs-only}. Then rebuild Kagan libc, \code{kash} and the
 utilities.
 
 \begin{lst}{a64asm}{user/arch/aarch64/crt0.S}
@@ -1114,7 +1114,7 @@ Arm \textbf{semihosting}, a debugger interface: with \code{-semihosting-config e
 instruction \texttt{hlt \#0xf000} at EL1 becomes a request to QEMU, with the operation in \code{w0} and a parameter
 pointer in \code{x1}. \code{SYS_EXIT} (\code{0x18}) on AArch64 takes a two-word block; when its first word is
 \code{ADP_Stopped_ApplicationExit} (\code{0x20026}), QEMU exits with the second word as its exit status. User code
-cannot do this unless \code{userspace=on} is also passed, which Turk-OS never does.
+cannot do this unless \code{userspace=on} is also passed, which Kagan never does.
 
 \begin{lst}{c}{kernel/arch/aarch64/semihost.c}
 _Noreturn void arch_test_exit(int failed)
@@ -1129,23 +1129,23 @@ _Noreturn void arch_test_exit(int failed)
         __asm__ volatile ("wfi");
 }
 \end{lst}
-\verify{\code{make ARCH=aarch64 run} boots to \code{turk@os:/$} with the root on virtio-blk; \code{make ARCH=aarch64
+\verify{\code{make ARCH=aarch64 run} boots to \code{kagan@os:/$} with the root on virtio-blk; \code{make ARCH=aarch64
 test} prints every result and \code{ALL TESTS PASSED}, and breaking one test makes QEMU exit with status 1. The Phase
 15 fuzzer runs for an hour without a kernel panic, and the CI matrix of Task~16.11, now with \code{aarch64}, runs the
 evil programs and a short fuzzer run green on all three architectures.}
 
-\task{Turk-OS 2.0}
-Bring the three architectures together. TurkFS has no endianness or word-size problem: all three targets are
+\task{Kagan 2.0}
+Bring the three architectures together. KaganFS has no endianness or word-size problem: all three targets are
 little-endian and the on-disk format uses fixed-width fields, so one image must work everywhere. Prove it: create an
 image with \code{mkfs.minix -3}, write files on AArch64, check it with \code{fsck.minix -f}, boot the same file on
 riscv32 (virtio) and on i386 (ATA, \code{-drive if=ide}), and write from there too.
 
 \begin{lst}{sh}{terminal}
-make release-all                                  # i386 ISO, riscv32 and aarch64 kernels, one TurkFS image
-make ARCH=aarch64 run DISK=build/turkfs-2.0.img   # write /home/turk/from-arm
-fsck.minix -f build/turkfs-2.0.img
-make ARCH=riscv32 run DISK=build/turkfs-2.0.img   # read it, write /home/turk/from-riscv
-make ARCH=i386 run DISK=build/turkfs-2.0.img      # read both
+make release-all                                  # i386 ISO, riscv32 and aarch64 kernels, one KaganFS image
+make ARCH=aarch64 run DISK=build/kaganfs-2.0.img   # write /home/turk/from-arm
+fsck.minix -f build/kaganfs-2.0.img
+make ARCH=riscv32 run DISK=build/kaganfs-2.0.img   # read it, write /home/turk/from-riscv
+make ARCH=i386 run DISK=build/kaganfs-2.0.img      # read both
 \end{lst}
 
 Run the Phase 15 benchmarks on all three and fill a table like the one below. \code{arch_cycles} counts different
@@ -1163,7 +1163,7 @@ null system call (\code{getpid}) & & & \\
 context switch (two processes, two pipes) & & & \\
 \code{fork} + \code{exit} + \code{wait} & & & \\
 16\,MiB file write, then read with a warm cache & & & \\
-boot to the \code{tsh} prompt & & & \\
+boot to the \code{kash} prompt & & & \\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -1208,7 +1208,7 @@ boot table & Device 0--1\,GiB, Normal 1--2\,GiB & Normal from 0, Device for the 
 interrupt controller & GICv2 at \code{0x08000000} & GIC-400 (\code{arm,gic-400}), a GICv2, at \code{0xFF841000} \\
 console & PL011 at \code{0x09000000}, INTID 33, 24\,MHz & PL011 at \code{0xFE201000}, SPI 121 = INTID 153, clock from the tree \\
 timer & virtual timer, INTID 27 & the same \\
-root & TurkFS on virtio-blk & the initrd only \\
+root & KaganFS on virtio-blk & the initrd only \\
 other cores & powered off until PSCI & waiting in the firmware's spin loop \\
 \bottomrule
 \end{tabularx}
@@ -1217,7 +1217,7 @@ other cores & powered off until PSCI & waiting in the firmware's spin loop \\
 Honour the devicetree's \code{/memreserve/} entries and \code{/reserved-memory}: the firmware's stub and its spin
 table live at the bottom of RAM.
 \verify{The serial terminal (115200 baud) shows ``Merhaba from a Raspberry Pi 4, EL1'', the memory map from the
-firmware's devicetree, and finally \code{turk@os:/$} running from the initrd.}
+firmware's devicetree, and finally \code{kagan@os:/$} running from the initrd.}
 
 \section{Testing and debugging}
 
@@ -1247,16 +1247,16 @@ No output on the Raspberry Pi & PL011 not on the header pins, wrong UART clock, 
 
 \section{Exit criteria}
 
-\begin{milestonebox}[Turk-OS 2.0: three architectures]
+\begin{milestonebox}[Kagan 2.0: three architectures]
 \begin{checklist}
-  \item \code{qemu-system-aarch64 -machine virt -cpu cortex-a72} boots to the \code{tsh} prompt, from EL1 and with \code{virtualization=on} from EL2.
+  \item \code{qemu-system-aarch64 -machine virt -cpu cortex-a72} boots to the \code{kash} prompt, from EL1 and with \code{virtualization=on} from EL2.
   \item Exceptions are decoded from \code{ESR_EL1} with names in crash reports; \code{brk} returns; user faults become signals.
   \item GICv2, the virtual timer at 100\,Hz from \code{CNTFRQ_EL0}, and PL011 receive interrupts work; the monitor runs over serial.
   \item The MMU runs with \code{TTBR1_EL1} for the kernel and \code{TTBR0_EL1} per process, Device and Normal memory, and copy-on-write.
   \item ELF64 programs run at EL0 with \code{svc} system calls and the Linux i386 numbers; the evil programs are contained.
   \item \code{PXN}/\code{UXN} keep every page writable or executable, never both: a write to kernel text and an execute from a user data page both fault. PAN is on when the CPU has it (optional).
   \item \code{make ARCH=aarch64 test} passes through semihosting, the evil programs and the fuzzer pass on AArch64 in CI, and the fuzzer runs for an hour without a panic.
-  \item One TurkFS image is written and read on all three architectures and passes \code{fsck.minix -f}.
+  \item One KaganFS image is written and read on all three architectures and passes \code{fsck.minix -f}.
   \item \code{make release-all} works from a clean clone, the benchmark table and the porting chapter are written, and \code{v2.0} is tagged.
 \end{checklist}
 \end{milestonebox}
@@ -1264,14 +1264,14 @@ No output on the Raspberry Pi & PL011 not on the header pins, wrong UART clock, 
 \begin{questionbox}
 \begin{enumerate}
   \item x86 has one \code{CR3}; AArch64 has \code{TTBR0_EL1} and \code{TTBR1_EL1}. What does the second register save the kernel on every process creation and switch?
-  \item What does the access flag let an operating system do, and why does Turk-OS set it everywhere?
+  \item What does the access flag let an operating system do, and why does Kagan set it everywhere?
   \item Why must device registers be mapped Device-nGnRnE? Describe one thing that would go wrong with Normal memory.
-  \item Where does 64-bit execution break Turk-OS despite Task 16.9, and why can the compiler not warn about it?
+  \item Where does 64-bit execution break Kagan despite Task 16.9, and why can the compiler not warn about it?
   \item Why do \code{ldaxr} and \code{stlxr} need the MMU and the caches on?
   \item After \code{svc}, the kernel does not add 4 to the return address; after \code{brk} it does. Why the difference, and how does RISC-V handle \code{ecall}?
   \item Why does AArch64 need no TSS and no \code{sscratch} to find the kernel stack?
   \item Which of the two ports needs the most architecture-specific code, and what does that say about the architecture interface?
-  \item How can one TurkFS image serve three architectures, and what change to the format would break that?
+  \item How can one KaganFS image serve three architectures, and what change to the format would break that?
 \end{enumerate}
 \end{questionbox}
 
@@ -1282,7 +1282,7 @@ per-CPU data in \code{TPIDR_EL1}, SGIs for rescheduling and TLB shootdown, and t
 on real contention. Move to GICv3 (\code{gic-version=3}), whose CPU interface is a set of system registers instead of
 MMIO. Give each process an ASID in the top bits of \code{TTBR0_EL1}, set \code{nG} on user pages, and stop flushing the
 whole TLB on every switch; measure the context-switch benchmark before and after. Try the 16\,KiB and 64\,KiB granules
-and see how the walk changes. Run Turk-OS under KVM on an ARM machine. Port it to the Raspberry Pi~5, whose
+and see how the walk changes. Run Kagan under KVM on an ARM machine. Port it to the Raspberry Pi~5, whose
 peripherals sit behind the RP1 chip and whose standard Linux kernel uses 16\,KiB pages. Or take Phase 15's Track D: now that the
 generic code is 64-bit clean, x86-64 is mostly a new \code{kernel/arch/x86_64}.
 

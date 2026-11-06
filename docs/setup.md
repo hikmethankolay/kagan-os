@@ -1,12 +1,12 @@
 # Development environment setup
 
-This guide takes your machine to a working Turk-OS workshop: host tools, an `i686-elf` cross compiler, QEMU, GDB
+This guide takes your machine to a working Kagan workshop: host tools, an `i686-elf` cross compiler, QEMU, GDB
 and an editor that understands the code. It covers tasks 0.1–0.3 and 0.7 of [Phase 0](pdf/phase-00-foundations.pdf)
 for every supported platform, in copy-and-paste form. [Section 9](#9-toolchains-for-the-ports-stage-v) adds the tools
 for the RISC-V and ARM ports of Stage V (Task 16.1 of [Phase 16](pdf/phase-16-portability-layer.pdf)), which you only
-need after Turk-OS 1.0.
+need after Kagan 1.0.
 
-Turk-OS builds the same way on every platform below: the same cross compiler, the same QEMU, the same Makefile.
+Kagan builds the same way on every platform below: the same cross compiler, the same QEMU, the same Makefile.
 Only package names and a few tool names differ. When a command from a phase document isn't found on your system,
 look it up in [section 4](#4-tool-names-on-each-platform). Where this guide and a phase document disagree about
 anything else, the phase document wins.
@@ -39,7 +39,7 @@ anything else, the phase document wins.
 | **macOS** (Intel and Apple Silicon) | Works, with two gaps | Homebrew | Prebuilt from Homebrew |
 | **Windows 10 / 11** | Full, through WSL2 | Ubuntu inside WSL2 | Build from source inside WSL2 |
 
-On macOS the two gaps are that the GRUB and GDB tools have prefixed names, and that the TurkFS image can't be
+On macOS the two gaps are that the GRUB and GDB tools have prefixed names, and that the KaganFS image can't be
 loop-mounted from the host (Phase 13). Details are in the [macOS](#macos) section.
 
 Every platform ends up with the same set of tools:
@@ -54,7 +54,7 @@ Every platform ends up with the same set of tools:
 | `grub-file` / `grub2-file` | Checking that the kernel has a valid Multiboot header | Phase 1 |
 | Host `gcc`, `make`, `git` | Host unit tests, builds, version control | Phase 0 |
 | `qemu-img` | Creating disk images | Phase 12 |
-| `mkfs.minix`, `fsck.minix` | Creating and checking TurkFS images | Phase 13 |
+| `mkfs.minix`, `fsck.minix` | Creating and checking KaganFS images | Phase 13 |
 | `latexmk` and TeX Live | Rebuilding the design-document PDFs (optional) | any time |
 
 > Installing GRUB packages only installs the tools. It doesn't touch your computer's own boot loader; that only
@@ -162,7 +162,7 @@ Things that work differently on macOS:
 | `make` | macOS ships GNU Make 3.81 from 2006. Use `gmake` (Homebrew's current GNU Make) for this project |
 | `timeout` (`make test`, Phase 7) | `gtimeout`, from `coreutils` |
 | Host compiler | `gcc` is Apple clang. The Phase 0 host tests with `-fsanitize=address,undefined` work with it |
-| Loop mounts (Phase 13) | macOS can't mount a MINIX image, so the optional `sudo mount -o loop` step doesn't work. Put files onto TurkFS from Turk-OS itself, with the planned `tools/mkturkfs.c`, or in a Linux virtual machine |
+| Loop mounts (Phase 13) | macOS can't mount a MINIX image, so the optional `sudo mount -o loop` step doesn't work. Put files onto KaganFS from Kagan itself, with the planned `tools/mkkaganfs.c`, or in a Linux virtual machine |
 | QEMU monitor | Start QEMU with `-monitor stdio`, or use the *View* menu in the QEMU window |
 | CPU count | `nproc` doesn't exist; use `sysctl -n hw.ncpu` if a command asks for it |
 
@@ -170,7 +170,7 @@ Things that work differently on macOS:
 
 ### Windows (WSL2)
 
-Turk-OS is built inside **WSL2** (Windows Subsystem for Linux) running Ubuntu. Native Windows tool ports such as MSYS2
+Kagan is built inside **WSL2** (Windows Subsystem for Linux) running Ubuntu. Native Windows tool ports such as MSYS2
 or Cygwin aren't supported: they lack a working `grub-mkrescue`, `mkfs.minix` and loop mounts, which the plan needs.
 
 1. **Install WSL2 and Ubuntu.** Open PowerShell *as Administrator*:
@@ -195,18 +195,18 @@ or Cygwin aren't supported: they lack a working `grub-mkrescue`, `mkfs.minix` an
 
    ```sh
    cd ~
-   git clone https://github.com/hikmethankolay/Turk-OS.git
+   git clone https://github.com/hikmethankolay/kagan-os.git
    ```
 
 Things that work differently on WSL2:
 
 | Topic | What to do |
 |---|---|
-| Where the repository lives | In the Linux home folder (`~/Turk-OS`). Files under `/mnt/c/...` are much slower to build from and bring Windows permissions and line endings along. To open the folder in Windows Explorer, run `explorer.exe .` inside it. |
+| Where the repository lives | In the Linux home folder (`~/kagan-os`). Files under `/mnt/c/...` are much slower to build from and bring Windows permissions and line endings along. To open the folder in Windows Explorer, run `explorer.exe .` inside it. |
 | Editor | Install VS Code on Windows with the **WSL** extension, then run `code .` in the repository from the Ubuntu terminal. The compiler, terminal and language server all run inside Linux. See [section 7](#7-editor-setup). |
 | QEMU window | Appears through WSLg. If no window opens, run QEMU with `-display curses` to draw the VGA text screen in the terminal (press Esc then 2 for the monitor, where `quit` stops QEMU), or with `-display none -serial stdio` to use only the serial log (Ctrl+C stops QEMU). |
 | Git | Use `git` inside WSL. Don't work on the same clone from Git for Windows as well. |
-| Writing the ISO to a USB stick (Phase 15) | WSL can't see USB disks. Copy the ISO to Windows (`cp build/turkos.iso /mnt/c/Users/<you>/Downloads/`) and write it with [Rufus](https://rufus.ie) in *DD image* mode. |
+| Writing the ISO to a USB stick (Phase 15) | WSL can't see USB disks. Copy the ISO to Windows (`cp build/kagan.iso /mnt/c/Users/<you>/Downloads/`) and write it with [Rufus](https://rufus.ie) in *DD image* mode. |
 
 ---
 
@@ -301,7 +301,7 @@ Open a new terminal so the change takes effect. The folders in `~/src` can be de
 
 ### 3.6 Record the versions
 
-Write the versions of every tool the build depends on into `docs/toolchain.lock` in your Turk-OS repository and
+Write the versions of every tool the build depends on into `docs/toolchain.lock` in your Kagan repository and
 commit it. It is a plain text file that says which tools this tree is built and tested with, so when a build breaks
 after an upgrade you can see what changed. Run this from the repository root (use `grub-mkrescue` if your
 distribution names it that way, see section 4):
@@ -375,7 +375,7 @@ Open a **new** terminal (the one your editor uses) and run each command. On macO
 Then compile something freestanding and look at it. This is also Phase 0's first assembly-reading exercise:
 
 ```sh
-mkdir -p /tmp/turkos-check && cd /tmp/turkos-check
+mkdir -p /tmp/kagan-check && cd /tmp/kagan-check
 printf 'int add(int a, int b) { return a + b; }\n' > add.c
 i686-elf-gcc -std=gnu11 -ffreestanding -O0 -S -masm=intel add.c -o add.s   # read add.s
 i686-elf-gcc -std=gnu11 -ffreestanding -O0 -c add.c -o add.o
@@ -498,7 +498,7 @@ Then build with `make -C docs` from the repository root.
 ## 9. Toolchains for the ports (Stage V)
 
 You need this section only when you reach [Phase 16](pdf/phase-16-portability-layer.pdf) (Task 16.1), after
-Turk-OS 1.0; if you are working on Phase 0, skip it. Stage V ports Turk-OS to RISC-V (Phase 17) and to ARM (Phase 18),
+Kagan 1.0; if you are working on Phase 0, skip it. Stage V ports Kagan to RISC-V (Phase 17) and to ARM (Phase 18),
 and each port needs its own cross compiler, its own QEMU board and a debugger that understands it. The order is the
 same as in sections 2 to 6: packages first, then the cross compilers, then the checks.
 
@@ -699,7 +699,7 @@ terminal. Add both compilers and the two new QEMU binaries to `docs/toolchain.lo
 
 **Why not a prebuilt `riscv64-elf-gcc`?** Homebrew and Arch package one. Given `-march` and `-mabi` it generates RV32
 code and even links the 32-bit `libgcc`, but it defaults to 64-bit code and the 64-bit ABI. Every compile *and* link
-command would then need both options, and the Turk-OS Makefile links with the compiler's defaults (Phase 16), so the
+command would then need both options, and the Kagan Makefile links with the compiler's defaults (Phase 16), so the
 link fails. A `riscv32-elf` compiler built with the options above gets this right by itself.
 
 ### 9.4 Tool names for the ports
@@ -745,7 +745,7 @@ Open a new terminal and run each command. On macOS, use the debugger names from 
 Then compile one small file for each port and look at the result:
 
 ```sh
-mkdir -p /tmp/turkos-check && cd /tmp/turkos-check
+mkdir -p /tmp/kagan-check && cd /tmp/kagan-check
 cat > csr.c <<'EOF'
 unsigned long read_sstatus(void)
 {
@@ -850,7 +850,7 @@ number of the processor core. After `continue`, the OpenSBI banner appears in th
 | Ubuntu / Debian / WSL2 | The ISO builds, but QEMU says *No bootable device* | `grub-pc-bin` missing, so the ISO has no BIOS boot code | `sudo apt install grub-pc-bin`, then rebuild the ISO |
 | Ubuntu / Debian / WSL2 | `qemu-img: command not found` | Packaged separately | `sudo apt install qemu-utils` |
 | WSL2 | QEMU prints `gtk initialization failed` or no window appears | WSLg missing or outdated | Run `wsl --update` in PowerShell and restart WSL (`wsl --shutdown`); meanwhile use `-display curses` or `-display none -serial stdio` |
-| WSL2 | Builds are very slow | Repository under `/mnt/c` | Clone into the Linux home folder (`~/Turk-OS`) |
+| WSL2 | Builds are very slow | Repository under `/mnt/c` | Clone into the Linux home folder (`~/kagan-os`) |
 | WSL2 | `$'\r': command not found` or `/bin/sh^M: bad interpreter` | Files checked out with Windows (CRLF) line endings | Clone inside WSL, not with Git for Windows; in an existing clone run `git add --renormalize .` |
 | All (Stage V) | ``Error: unrecognized opcode `csrr a0,sstatus', extension `zicsr' required`` (or ``extension `zifencei' required`` for `fence.i`) | `-march` without `_zicsr_zifencei` | Use `-march=rv32imac_zicsr_zifencei`, and build GCC with the options from step 9.3 |
 | All (Stage V) | The RISC-V link fails with ``ABI is incompatible with that of the selected emulation`` and ``target emulation `elf32-littleriscv' does not match `elf64-littleriscv'`` | RV32 objects linked with `riscv64-elf-` tools, which default to 64 bits | Build `riscv32-elf` (section 9.3) and use `CROSS=riscv32-elf-` |

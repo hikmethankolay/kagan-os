@@ -1,6 +1,6 @@
-# Turk-OS documentation
+# Kagan documentation
 
-This folder holds the Turk-OS **design documents**: a roadmap and one design document per development phase, from the
+This folder holds the Kagan **design documents**: a roadmap and one design document per development phase, from the
 toolchain to release 1.0 on x86 and the RISC-V and AArch64 ports of release 2.0. It also holds the setup guide and the
 engineering records that the project keeps alongside the code. For the project overview, see the
 [main README](../README.md).
@@ -27,7 +27,7 @@ engineering records that the project keeps alongside the code. For the project o
 | [`pdf/`](pdf/) | The design documents as PDFs (committed to Git) |
 | [`00-roadmap.tex`](00-roadmap.tex) | Source of the roadmap |
 | [`phases/`](phases/) | Sources of the nineteen phase documents |
-| [`common/turkos.sty`](common/turkos.sty) | Shared LaTeX style: colours, title banner, boxes, tables, code listings, reference chips |
+| [`common/kagan.sty`](common/kagan.sty) | Shared LaTeX style: colours, title banner, boxes, tables, code listings, reference chips |
 | [`Makefile`](Makefile), [`.latexmkrc`](.latexmkrc) | Build rules for the PDFs |
 
 ---
@@ -53,7 +53,7 @@ the previous one holds. Phases 0–15 (Stages I–IV) produce release 1.0; Stage
 | [Phase 10](pdf/phase-10-user-mode-syscalls.pdf) · [source](phases/phase-10-user-mode-syscalls.tex) | III · Processes | User mode, system calls and the protection boundary |
 | [Phase 11](pdf/phase-11-process-api.pdf) · [source](phases/phase-11-process-api.tex) | III · Processes | Process API: `fork`, `exec`, `wait` and `exit` |
 | [Phase 12](pdf/phase-12-storage-drivers.pdf) · [source](phases/phase-12-storage-drivers.tex) | IV · Persistence | Storage: block devices, ATA driver and buffer cache |
-| [Phase 13](pdf/phase-13-file-systems.pdf) · [source](phases/phase-13-file-systems.tex) | IV · Persistence | File systems: VFS, initrd and TurkFS |
+| [Phase 13](pdf/phase-13-file-systems.pdf) · [source](phases/phase-13-file-systems.tex) | IV · Persistence | File systems: VFS, initrd and KaganFS |
 | [Phase 14](pdf/phase-14-userland-shell.pdf) · [source](phases/phase-14-userland-shell.tex) | IV · Persistence | Userland: libc, shell and utilities |
 | [Phase 15](pdf/phase-15-hardening-release.pdf) · [source](phases/phase-15-hardening-release.tex) | IV · Persistence | Hardening and release 1.0 |
 | [Phase 16](pdf/phase-16-portability-layer.pdf) · [source](phases/phase-16-portability-layer.tex) | V · Ports | Portability: an architecture layer |
@@ -68,7 +68,7 @@ the previous one holds. Phases 0–15 (Stages I–IV) produce release 1.0; Stage
 | Phase | Tasks |
 |---|---|
 | **0** Foundations | Install the host tools · make the editor's terminal see them · build the `i686-elf` cross compiler · create the repository skeleton · write and test the C warm-up library (`string`, `convert`, `bitmap`, `ringbuf`, `list.h`) · read compiler-generated assembly · smoke-test QEMU and GDB · start the engineering journal · threat-model stub |
-| **1** Assembly and boot | Read compiler output · write assembly that C can call (`max`, `sum_array`) · a 512-byte boot sector that prints "Merhaba, Turk-OS!" · "Hello Cafebabe": a Multiboot kernel that puts `0xCAFEBABE` in `EAX` · boot through a real GRUB ISO · a Makefile (`all`, `run`, `iso`, `debug`, `clean`) · the first kernel debugging session |
+| **1** Assembly and boot | Read compiler output · write assembly that C can call (`max`, `sum_array`) · a 512-byte boot sector that prints "Merhaba, Kagan!" · "Hello Cafebabe": a Multiboot kernel that puts `0xCAFEBABE` in `EAX` · boot through a real GRUB ISO · a Makefile (`all`, `run`, `iso`, `debug`, `clean`) · the first kernel debugging session |
 | **2** Getting to C | Give the loader a stack and call C · compile C for the kernel · port I/O helpers · the VGA text driver · the serial driver · `kprintf`, log levels and the console layer · `panic` and `ASSERT` · read the Multiboot information |
 | **3** GDT, IDT, exceptions | Describe the GDT in C · load it and reload the segment registers · build and load the IDT · write the interrupt stubs · the C exception handler · a handler registration API · trigger and verify every exception |
 | **4** Hardware interrupts | Remap and mask the PIC · IRQ stubs and dispatch · the timer · the keyboard driver · the Turkish Q layout (optional) · line input and the kernel monitor · keep handlers short: top and bottom halves |
@@ -104,20 +104,20 @@ the previous one holds. Phases 0–15 (Stages I–IV) produce release 1.0; Stage
 | Phase | Tasks |
 |---|---|
 | **12** Storage | A disk for QEMU · find the drive with IDENTIFY · read and write sectors, polling · let the disk interrupt · a block device layer · partitions · a RAM disk · the buffer cache · tools and tests |
-| **13** File systems | The VFS objects · descriptors and the basic calls · devices as files · a read-only root from a tar archive · path lookup · TurkFS, reading · TurkFS, writing · `stat`, `fstat` and `getdents` · tests |
-| **14** Userland | Turk-libc: the skeleton · `malloc` in user space · `stdio` · pipes in the kernel · a real terminal · `tsh`, the Turk shell · core utilities · boot into the shell · test the userland |
+| **13** File systems | The VFS objects · descriptors and the basic calls · devices as files · a read-only root from a tar archive · path lookup · KaganFS, reading · KaganFS, writing · `stat`, `fstat` and `getdents` · tests |
+| **14** Userland | Kagan libc: the skeleton · `malloc` in user space · `stdio` · pipes in the kernel · a real terminal · `kash`, the Kagan shell · core utilities · boot into the shell · test the userland |
 | **15** Release | Fuzz the system call interface · audit the boundary · harden the kernel itself · users and permissions · benchmarks and one real optimisation · write the documentation · release v1.0 · write the design review · extensions after v1.0 |
 
 </details>
 
 <details>
-<summary><b>Stage V: Ports (Phases 16–18)</b>. An architecture layer, then Turk-OS on RISC-V and AArch64: release 2.0.</summary>
+<summary><b>Stage V: Ports (Phases 16–18)</b>. An architecture layer, then Kagan on RISC-V and AArch64: release 2.0.</summary>
 
 | Phase | Tasks |
 |---|---|
 | **16** Portability | Two more cross compilers, two QEMU boards, dtc and a multi-architecture GDB · find every place x86 leaked · move x86 into its corner · the architecture interface · one trap frame for generic code · boot information without Multiboot · memory layout and the MMU behind an interface · consoles and input that any board can provide · make the generic code 64-bit clean · read a devicetree · one Makefile, three architectures · prove that nothing broke |
-| **17** RISC-V | Meet the board · the first instructions · the 16550 again, memory-mapped · traps · time and interrupts · memory from the devicetree · Sv32 and the higher half · tasks and locks · into user mode and back · a disk on virtio · userland for RV32 · `make test` on RISC-V · optional: Turk-OS on Timur-RV32IMC |
-| **18** ARM | Meet the board · the first instructions · a new UART: the PL011 · exception vectors · interrupts and time · the MMU, carefully · sixty-four bits everywhere · tasks and locks · into EL0 and back · virtio again, and the whole userland · Turk-OS 2.0 · optional: Raspberry Pi 4 |
+| **17** RISC-V | Meet the board · the first instructions · the 16550 again, memory-mapped · traps · time and interrupts · memory from the devicetree · Sv32 and the higher half · tasks and locks · into user mode and back · a disk on virtio · userland for RV32 · `make test` on RISC-V · optional: Kagan on Timur-RV32IMC |
+| **18** ARM | Meet the board · the first instructions · a new UART: the PL011 · exception vectors · interrupts and time · the MMU, carefully · sixty-four bits everywhere · tasks and locks · into EL0 and back · virtio again, and the whole userland · Kagan 2.0 · optional: Raspberry Pi 4 |
 
 </details>
 
@@ -214,8 +214,8 @@ These files live in `docs/` next to the design documents; each is created by the
 | `syscalls.md` | Phase 10 | System call reference: number, arguments, return value and errors |
 | `security/syscalls.md` | Phase 10 | Validation contract of every system call argument |
 | Benchmark results | Phase 15 | The benchmark table, with one optimisation measured before and after |
-| Architecture document | Phase 15 | Overview, each subsystem, memory maps, system call table, lock order, TurkFS format, build/run/test/debug, known limitations |
-| Design review | Phase 15 | Each Turk-OS subsystem compared with MINIX 3 and Linux; Phase 18 adds a porting chapter |
+| Architecture document | Phase 15 | Overview, each subsystem, memory maps, system call table, lock order, KaganFS format, build/run/test/debug, known limitations |
+| Design review | Phase 15 | Each Kagan subsystem compared with MINIX 3 and Linux; Phase 18 adds a porting chapter |
 | `porting.md` | Phase 16 | The x86 leak audit (file, line, leak, fix) and notes on the architecture interface |
 
 The lock order itself lives in code, in a comment block in `include/locks.h` (Phase 9).
@@ -270,11 +270,11 @@ Run these inside `docs/` (or from the repository root with `make -C docs ...`):
 | `make clean` | Deletes `build/` (auxiliary files) |
 | `make distclean` | Deletes `build/` and `pdf/` |
 
-`make` only rebuilds a PDF when its `.tex` file or `common/turkos.sty` has changed. Auxiliary files (`.aux`, `.log`,
+`make` only rebuilds a PDF when its `.tex` file or `common/kagan.sty` has changed. Auxiliary files (`.aux`, `.log`,
 `.toc`, ...) go to `build/`, which Git ignores; the finished PDFs go to `pdf/`, which Git tracks.
 
 Each document runs `latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir=pdf -auxdir=build`. The
-[`.latexmkrc`](.latexmkrc) adds `common/` to `TEXINPUTS`, so every document finds `turkos.sty` no matter which folder
+[`.latexmkrc`](.latexmkrc) adds `common/` to `TEXINPUTS`, so every document finds `kagan.sty` no matter which folder
 its source is in.
 
 ---
@@ -286,7 +286,7 @@ file in `phases/` automatically. Start from this skeleton:
 
 ```latex
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 % number, title, one-line goal, (unused), (unused)
@@ -335,7 +335,7 @@ Symptom & Likely cause & Resolution. \\
 
 A Stage V document also ends with `\portlegend` after `\booklegend`.
 
-The commands and environments `common/turkos.sty` provides:
+The commands and environments `common/kagan.sty` provides:
 
 | Name | Use |
 |---|---|

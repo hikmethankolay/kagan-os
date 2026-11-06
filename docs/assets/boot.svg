@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg viewBox="0 0 960 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="boot-title boot-desc" id="boot-root">
-<title id="boot-title">Turk-OS boot sequence</title>
+<title id="boot-title">Kagan boot sequence</title>
 <desc id="boot-desc">Control passes from the BIOS to GRUB, the Multiboot loader, kmain and finally init, the first user process.</desc>
 <defs>
       <style>#boot-root { font-family: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; color: #1B2A4A; }

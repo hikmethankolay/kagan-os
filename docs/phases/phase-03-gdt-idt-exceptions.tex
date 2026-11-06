@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 \phaseheader{3}{Segmentation, the IDT and CPU Exceptions}{Install the kernel's own descriptor tables and turn every CPU fault into a readable crash report instead of a silent reboot}{16}{22}
@@ -16,7 +16,7 @@ prints ``Divide error (\#DE) at EIP=0x00101234'' with every register, which lead
 No other change in the whole project saves as much debugging time.
 
 The phase has two parts that belong together. The \textbf{GDT} defines the segments the CPU uses and, more
-importantly for Turk-OS, the privilege levels: ring 0 for the kernel and ring 3 for users. The Multiboot contract says
+importantly for Kagan, the privilege levels: ring 0 for the kernel and ring 3 for users. The Multiboot contract says
 GRUB's GDT may be invalid, so the kernel installs its own before touching a segment register. The \textbf{IDT} tells
 the CPU where to jump for each of the 256 interrupt vectors. Vectors 0--31 are CPU exceptions, handled in this phase.
 Vectors 32--47 will be hardware interrupts in Phase 4, and vector \code{0x80} becomes the system call gate in
@@ -25,7 +25,7 @@ then on the hardware knows where to go when something needs the kernel's attenti
 
 \section{Background}
 
-\subsection{Segmentation, and why Turk-OS neutralises it}
+\subsection{Segmentation, and why Kagan neutralises it}
 
 In protected mode every memory access goes through a segment. A \textbf{segment selector} in CS, DS, SS and the
 other segment registers picks a \textbf{descriptor} from the GDT (Figure~\ref{fig:selector}), and the descriptor
@@ -59,7 +59,7 @@ level} of running code is the DPL of its code segment, so ring 0 and ring 3 need
 Each descriptor packs its fields into 8 bytes in a famously awkward layout (Figure~\ref{fig:desc}), a leftover from
 the 286. The two bytes that matter are the \textbf{access byte} (present bit, DPL, code or data, readable or writable)
 and the \textbf{flags} nibble (4\,KiB granularity and 32-bit operation). Table~\ref{tab:gdt} lists the values
-Turk-OS uses.
+Kagan uses.
 
 \begin{figure}[htbp]
 \centering
@@ -105,7 +105,7 @@ Turk-OS uses.
 5 & \code{0x28} & task state segment (filled in Phase 10) & \code{0x89} & \code{0x0} & \code{sizeof(tss)-1} \\
 \bottomrule
 \end{tabular}
-\caption{The Turk-OS GDT. Flags \code{0xC} = 4\,KiB granularity + 32-bit, so limit \code{0xFFFFF} covers 4\,GiB.}
+\caption{The Kagan GDT. Flags \code{0xC} = 4\,KiB granularity + 32-bit, so limit \code{0xFFFFF} covers 4\,GiB.}
 \label{tab:gdt}
 \end{table}
 
@@ -146,14 +146,14 @@ unreliable, and the only option is to report it and stop.
 21 & \#CP & Control protection & fault & yes \\
 \bottomrule
 \end{tabular}
-\caption{The CPU exceptions Turk-OS handles. Vectors 9, 15, 20 and 22--31 are reserved or rare and get a generic handler.}
+\caption{The CPU exceptions Kagan handles. Vectors 9, 15, 20 and 22--31 are reserved or rare and get a generic handler.}
 \label{tab:exc}
 \end{table}
 
 \subsection{What happens on an interrupt}
 
 When vector $n$ fires, the CPU reads IDT entry $n$. Each entry (a \textbf{gate}) holds the handler's address, the
-code segment selector to run it with (\code{0x08}), and a type byte. Turk-OS uses \code{0x8E}: present, DPL 0, 32-bit
+code segment selector to run it with (\code{0x08}), and a type byte. Kagan uses \code{0x8E}: present, DPL 0, 32-bit
 \emph{interrupt gate}, which clears the interrupt flag on entry. A \emph{trap gate} (\code{0x8F}) leaves interrupts
 enabled. The CPU then pushes EFLAGS, CS and EIP on the stack and, for some exceptions, an error code, and jumps to the
 handler. The handler returns with \code{iret}, which pops EIP, CS and EFLAGS back. (When the interrupt arrives in ring
@@ -214,7 +214,7 @@ handler names.
 MINIX builds its GDT and IDT in \texttt{kernel/protect.c (08300)}; look for \code{prot_init}, which fills the tables
 from a list of gate descriptions much like \code{idt_init} in Task~3.3. The entry stubs are macros in
 \texttt{kernel/mpx386.s (06300)}, and exceptions end up in \texttt{kernel/exception.c (08000)}. That file shows the
-decision Turk-OS makes in Phase 10: an exception in a user process becomes a signal to that process (for example,
+decision Kagan makes in Phase 10: an exception in a user process becomes a signal to that process (for example,
 divide error sends \code{SIGFPE}), while an exception inside the kernel is a panic.
 
 \par\smallskip\textbf{Linux, for comparison.} \LKD Linux keeps the flat model too: its GDT holds kernel and user code and data segments, the TSS and per-CPU entries, and every exception goes through the same kind of stub table into C handlers.
@@ -518,7 +518,7 @@ Double fault (vector 8) on every exception & The handler itself faults, for exam
 \begin{enumerate}
   \item If the flat model makes segmentation do nothing, why is a GDT still required, and why does it need ring 3 entries?
   \item Decode selector \code{0x23}: which GDT entry, which table, which RPL?
-  \item What does an interrupt gate do to the IF flag that a trap gate does not? Why does Turk-OS want that?
+  \item What does an interrupt gate do to the IF flag that a trap gate does not? Why does Kagan want that?
   \item Which exceptions push an error code, and why do the other stubs push a dummy value?
   \item What does the stack contain, from top to bottom, at the moment \code{isr_handler} is called?
   \item What distinguishes a fault, a trap and an abort? Give one example of each.

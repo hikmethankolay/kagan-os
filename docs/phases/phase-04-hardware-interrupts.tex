@@ -1,8 +1,8 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
-\phaseheader{4}{Hardware Interrupts: PIC, Timer and Keyboard}{Let devices interrupt the CPU, keep time with the PIT, read the keyboard, and give Turk-OS its first interactive prompt}{22}{28}
+\phaseheader{4}{Hardware Interrupts: PIC, Timer and Keyboard}{Let devices interrupt the CPU, keep time with the PIT, read the keyboard, and give Kagan its first interactive prompt}{22}{28}
 
 \ataglance{2 weeks}{3}{Phase 3: GDT, IDT, exception stubs, \code{register_interrupt_handler}}{A remapped 8259 PIC, IRQ
 dispatch with end-of-interrupt handling, a 100\,Hz timer with uptime and \code{sleep_ms}, a PS/2 keyboard driver
@@ -17,7 +17,7 @@ connects the first two devices to the IDT built in Phase 3.
 
 The timer matters more than it looks. A periodic tick is how the kernel gets control back from a running program,
 which makes preemptive multitasking possible in Phase 8, and it is also the kernel's clock for timeouts and
-\code{sleep}. The keyboard provides input, and together with the screen that makes Turk-OS interactive for the first
+\code{sleep}. The keyboard provides input, and together with the screen that makes Kagan interactive for the first
 time. The phase ends with a small command monitor inside the kernel. It is not a real shell, since that has
 to be a user program (Phase 14), but it serves as the test console for every later phase.
 
@@ -43,7 +43,7 @@ a cascade: the master handles IRQ 0--7, and the slave handles IRQ 8--15 and repo
   \draw[tkarrow] (mi.east) -- (m.west);
   \draw[tkarrow] (si.east) -- (s.west);
 \end{tikzpicture}
-\caption{The two cascaded PICs after Turk-OS remaps them. IRQ 14 returns in Phase 12.}
+\caption{The two cascaded PICs after Kagan remaps them. IRQ 14 returns in Phase 12.}
 \label{fig:pic}
 \end{figure}
 
@@ -51,7 +51,7 @@ Three properties of the PIC are common sources of bugs. First, the BIOS programs
 with CPU exceptions: the timer's IRQ 0 would arrive as vector 8 and look exactly like a double fault. So the very
 first job is to \textbf{remap} the PICs to vectors 32--47. Second, after handling an IRQ the kernel must send an
 \textbf{end-of-interrupt} (EOI) command, or the PIC never delivers that IRQ again; for IRQs 8--15, both the slave
-and the master need one. Third, each PIC has a \textbf{mask} register where a set bit disables an IRQ line. Turk-OS
+and the master need one. Third, each PIC has a \textbf{mask} register where a set bit disables an IRQ line. Kagan
 unmasks only the devices it has drivers for.
 
 \subsection{Timekeeping with the PIT}
@@ -416,7 +416,7 @@ Occasional interrupt on vector 39 (IRQ 7) or 47 & Spurious IRQ from the PIC & Re
 
 \section{Exit criteria}
 
-\begin{milestonebox}[Turk-OS is interactive]
+\begin{milestonebox}[Kagan is interactive]
 \begin{checklist}
   \item PIC remapped to 32--47; only the timer and keyboard are unmasked; every IRQ gets an EOI.
   \item Ticks arrive at 100\,Hz; \code{uptime} is accurate and \code{sleep_ms} works.

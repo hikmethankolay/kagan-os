@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg viewBox="0 0 960 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="banner-title banner-desc" id="banner-root">
-<title id="banner-title">Turk-OS</title>
-<desc id="banner-desc">Turk-OS: a UNIX-like operating system for x86, RISC-V and ARM.</desc>
+<title id="banner-title">Kagan</title>
+<desc id="banner-desc">Kagan: a UNIX-like operating system for x86, RISC-V and ARM.</desc>
   <defs>
       <style>#banner-root { font-family: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; color: #1B2A4A; }
       #banner-root .wrap { overflow-x: auto; }
@@ -9,7 +9,7 @@
   </defs>
 <rect width="960" height="180" rx="8" fill="#1B2A4A"/>
 <rect x="56" y="48" width="6" height="84" fill="#C8102E"/>
-<text x="88" y="98" fill="#FFFFFF" font-size="56" font-weight="700" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="start">Turk-OS</text>
+<text x="88" y="98" fill="#FFFFFF" font-size="56" font-weight="700" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="start">Kagan</text>
 <text x="90" y="132" fill="#D9DFEA" font-size="17" font-weight="500" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="start">A UNIX-like operating system for x86, RISC-V and ARM</text>
 <rect x="824" y="76" width="80" height="28" rx="4" fill="none" stroke="#5F6B7A" stroke-width="1"/>
 <text x="864" y="95" fill="#D9DFEA" font-size="12" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">AArch64</text>

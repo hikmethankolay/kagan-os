@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 \phaseheader{11}{Process API: fork, exec, wait and exit}{Implement the UNIX process model, and use the page-fault handler to make fork cheap and memory grow on demand}{70}{77}
@@ -41,12 +41,12 @@ child exits, collects its status and frees what is left of it. If a parent exits
 \begin{tikzpicture}[proc/.style={draw=tkNavy!70, fill=tkLight, rounded corners=2pt, font=\sffamily\scriptsize, align=center, minimum width=2.2cm, minimum height=0.8cm},
   zomb/.style={proc, fill=tkGray!18, dashed}, level distance=1.35cm, sibling distance=3.0cm, edge from parent/.style={draw=tkNavy!70, -{Stealth[length=2mm]}}]
   \node[proc, fill=tkRed!10] {\textbf{init} (pid 1)\\reaps orphans}
-    child {node[proc] {\textbf{tsh} (pid 5)\\the shell}
+    child {node[proc] {\textbf{kash} (pid 5)\\the shell}
       child {node[proc] {\textbf{ls} (pid 9)\\\code{fork} + \code{exec}}}
       child {node[zomb] {\textbf{cat} (pid 8)\\zombie until \code{wait}}}}
     child {node[proc] {\textbf{daemon} (pid 7)\\parent exited:\\adopted by init}};
 \end{tikzpicture}
-\caption{A Turk-OS process tree in Phase 14. Every process except init has a parent that must eventually \code{wait} for it.}
+\caption{A Kagan process tree in Phase 14. Every process except init has a parent that must eventually \code{wait} for it.}
 \label{fig:tree}
 \end{figure}
 
@@ -86,7 +86,7 @@ it builds on.
 
 \MOS\,\S3.6.2 lists the steps of page-fault handling in a real kernel, and \OSTEP chapters 21--22 go further: when
 memory runs out, pages can be written to disk and brought back by a fault (swapping), which needs a replacement
-policy such as the clock algorithm. Turk-OS uses faults for three things in this phase. \textbf{COW}: a write to a
+policy such as the clock algorithm. Kagan uses faults for three things in this phase. \textbf{COW}: a write to a
 present page marked COW. \textbf{Lazy heap}: \code{brk} only moves the heap's end, and a fault inside the heap maps a
 zeroed page. \textbf{Stack growth}: a fault just below the stack maps a new page, up to a limit. Anything else from
 user mode is a real error and ends the process with \code{SIGSEGV}. Swapping is an extension once a disk driver exists (Phase 12).
@@ -94,7 +94,7 @@ user mode is a real error and ends the process with \code{SIGSEGV}. Swapping is 
 \section{References}
 
 \begin{readingplan}
-\must & \OSTEP & Ch.~5 \emph{Interlude: Process API} (\code{fork}, \code{wait}, \code{exec}, why the split, redirection); its exercises run on Linux & 37--48 & The exact semantics Turk-OS reproduces. \\
+\must & \OSTEP & Ch.~5 \emph{Interlude: Process API} (\code{fork}, \code{wait}, \code{exec}, why the split, redirection); its exercises run on Linux & 37--48 & The exact semantics Kagan reproduces. \\
 \must & \OSDI & \S4.7 \emph{Overview of the MINIX 3 Process Manager}: memory layout, \code{fork}/\code{exit}/\code{wait} (\S4.7.4), \code{exec} (\S4.7.5), \code{brk} (\S4.7.6), signals (\S4.7.7) & 420--447 & A complete UNIX process model, explained step by step. \\
 \must & \OSDI & \S4.8.3--4.8.6 \emph{Implementation of fork, exit, wait, exec, brk, signal handling} & 455--471 & The real code for the same calls. \\
 \must & \OSC & \S10.2 \emph{Demand Paging}; \S10.3 \emph{Copy-on-Write} & 392--401 & Page faults as the mechanism behind COW and lazy allocation. \\
@@ -324,7 +324,7 @@ freshly \code{brk}ed buffer succeeds. With the PMM made to fail its next allocat
 \task{Minimal signals}
 Add a pending-signal bitmask to each task, and \code{sys_kill(pid, sig)}. Before returning to user mode (in
 \code{isr_handler}, when the saved CS has RPL 3), check pending signals and apply the default action; for now every
-signal Turk-OS supports terminates the process, with exit status $128 + \text{signal}$ so the parent can tell. Turn
+signal Kagan supports terminates the process, with exit status $128 + \text{signal}$ so the parent can tell. Turn
 user-mode exceptions into signals (\code{SIGSEGV} for page faults and \#GP, \code{SIGFPE} for divide errors,
 \code{SIGILL} for invalid opcodes). Make Ctrl+C on the console send \code{SIGINT} to a designated foreground process;
 Phase 14 formalises this with the terminal driver.

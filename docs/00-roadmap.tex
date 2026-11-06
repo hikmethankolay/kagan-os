@@ -1,7 +1,7 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 \renewcommand{\headlabel}{Roadmap}
-\hypersetup{pdftitle={Turk-OS: Roadmap and Architecture}, pdfauthor={Turk-OS}}
+\hypersetup{pdftitle={Kagan: Roadmap and Architecture}, pdfauthor={Kagan}}
 
 \begin{document}
 \thispagestyle{plain}
@@ -10,7 +10,7 @@
   \path[use as bounding box] (0,0) rectangle (\linewidth,4.2cm);
   \fill[tkNavy, rounded corners=5pt] (0,0) rectangle (\linewidth,4.2cm);
   \fill[tkRed] (0.05\linewidth,0.9cm) rectangle (0.058\linewidth,3.3cm);
-  \node[font=\sffamily\bfseries\fontsize{30}{32}\selectfont, text=white, anchor=north west] at (0.09\linewidth,3.45cm) {Turk-OS};
+  \node[font=\sffamily\bfseries\fontsize{30}{32}\selectfont, text=white, anchor=north west] at (0.09\linewidth,3.45cm) {Kagan};
   \node[font=\sffamily\bfseries\Large, text=white, anchor=north west] at (0.09\linewidth,2.15cm) {Roadmap and architecture};
   \node[font=\sffamily\small, text=white!78!tkNavy, anchor=south west, text width=0.86\linewidth, align=left] at (0.09\linewidth,0.45cm)
     {A UNIX-like operating system for i386, RV32 and AArch64: design decisions, development phases, release milestones and risks};
@@ -21,7 +21,7 @@
 
 \section{Introduction}
 
-Turk-OS is a small UNIX-like operating system written from scratch in C and assembly. Release 1.0 targets 32-bit
+Kagan is a small UNIX-like operating system written from scratch in C and assembly. Release 1.0 targets 32-bit
 x86 PCs: it boots with GRUB, runs preemptive multitasking with a separate address space per process, loads ELF
 programs from its own on-disk file system, and provides a POSIX-flavoured system call interface, a C library and a
 shell with pipes and redirection. Release 2.0 moves everything that depends on the processor behind one architecture
@@ -81,7 +81,7 @@ and \LOB is a practical guide to x86 bring-up whose chapters map onto Phases 1--
 \OSTEP & Operating Systems: Three Easy Pieces & Primary theory reference for every phase. \\
 \OSC & Operating System Concepts, 10th ed. & Comprehensive reference; a second treatment of each topic. \\
 \MOS & Modern Operating Systems, 4th ed. & Hardware, I/O, clocks, disks, security and operating-system design (Ch.~12). \\
-\OSDI & Operating Systems: Design and Implementation, 3rd ed. & MINIX~3, a complete x86 kernel printed line by line: the main prior-art comparison. MINIX is a microkernel; Turk-OS is monolithic. \\
+\OSDI & Operating Systems: Design and Implementation, 3rd ed. & MINIX~3, a complete x86 kernel printed line by line: the main prior-art comparison. MINIX is a microkernel; Kagan is monolithic. \\
 \LKD & Linux Kernel Development, 3rd ed. & How Linux implements scheduling, interrupts and bottom halves, synchronisation, memory, the VFS and block I/O: the second prior-art comparison. \\
 \LKP & Linux Kernel Programming (2021) & Current Linux practice for logging, the buddy and slab allocators, the CFS scheduler and synchronisation. \\
 \bottomrule
@@ -162,7 +162,7 @@ with MINIX~3 and Linux at every step; the last five cover the Stage V ports and 
 \midrule
 \endhead
 \bottomrule
-\caption{Technical decisions for Turk-OS.}\\
+\caption{Technical decisions for Kagan.}\\
 \endlastfoot
 Target CPU & IA-32 (i386), 32-bit protected mode, BIOS boot & \LOB, \OSDI (MINIX 3) and the Intel examples in \OSC\,\S9.6 are all 32-bit x86. Two-level paging is the simplest real MMU to learn. A 64-bit x86 port stays a Phase 15 track; the RISC-V and ARM ports are Stage V. \\
 Boot loader & GRUB via Multiboot~1; \texttt{qemu -kernel} for quick runs & A custom boot loader adds no value at this scale. Phase 1 implements a 512-byte boot sector to establish the boot path, then GRUB takes over. \\
@@ -170,7 +170,7 @@ Languages & C (gnu11) plus NASM (Intel syntax) & Assembly only where C cannot wo
 Toolchain & \texttt{i686-elf} cross GCC and binutils, GNU Make, Git & A cross compiler never assumes a Linux target, which prevents a family of confusing bugs (Phase 0). \\
 Emulator, debugger & QEMU and GDB (remote stub); Bochs is optional & QEMU is fast, scriptable, and has a monitor for inspecting registers and page tables. \LOB uses Bochs, whose debugger is still handy for descriptor-table bugs. \\
 Kernel structure & Monolithic, modular source tree & Simplest to get right for a first kernel. MINIX's microkernel is studied as a contrast, with an optional experiment in Phase 15. \\
-On-disk file system & MINIX V3 layout with 1\,KiB blocks, named TurkFS & The format described in \OSDI\,\S5.6, with source. Linux's \texttt{mkfs.minix -3} and \texttt{fsck.minix} create and check the images, and Linux can even mount them. \\
+On-disk file system & MINIX V3 layout with 1\,KiB blocks, named KaganFS & The format described in \OSDI\,\S5.6, with source. Linux's \texttt{mkfs.minix -3} and \texttt{fsck.minix} create and check the images, and Linux can even mount them. \\
 Testing & In-kernel \texttt{ktest} suites, headless QEMU, \texttt{isa-debug-exit}; host tests and parser fuzzing under AddressSanitizer and UBSan; continuous integration & \texttt{make test} boots, runs every test and exits with a pass or fail code, so regressions show up at once (Phase 7). CI runs it on every push; negative tests (``evil programs'') and a system call fuzzer check the protection boundary from Phases 10 and 11 on. \\
 Port targets & RV32 (\texttt{rv32imac}) with Sv32 paging on QEMU \texttt{virt}, then optionally the custom Timur-RV32IMC core; AArch64 (ARMv8-A) at EL1 with 39-bit virtual addresses on QEMU \texttt{virt}, then optionally a Raspberry Pi 4 &
   Sv32 is two-level 4\,KiB paging like x86, so the RISC-V kernel can stay at \texttt{0xC0000000}. AArch64 then changes the instruction set and the word size together: 4\,KiB pages, three-level tables, the kernel in the \texttt{TTBR1} high half (Phases 17, 18). \\
@@ -180,7 +180,7 @@ System calls on the ports & The same Linux i386 numbers everywhere; \texttt{ecal
   One table and one libc for three architectures; only the trap instruction and the registers change. Linux itself uses a different, generic table on RISC-V and arm64 (\texttt{write} is 64 and there is no \texttt{fork}), so its headers are not a source for these numbers. \\
 Port toolchain & \texttt{riscv32-elf} and \texttt{aarch64-elf} cross GCC and binutils; GNU \texttt{as} for port assembly & Built exactly like \texttt{i686-elf} in Phase 0, with the same versions (Task 16.1). NASM only knows x86, so it stays for the i386 code; port assembly lives in preprocessed \texttt{.S} files. \\
 Port devices & 16550 or PL011 console, PLIC or GICv2, SBI or Arm generic timer, virtio-blk disk, \texttt{sifive\_test} or semihosting for \texttt{make test} &
-  The \texttt{virt} boards have no PS/2 keyboard, VGA text screen or IDE disk by default. One virtio-blk driver serves both ports. All three targets are little-endian and TurkFS uses fixed-width fields, so the same disk image works everywhere. \\
+  The \texttt{virt} boards have no PS/2 keyboard, VGA text screen or IDE disk by default. One virtio-blk driver serves both ports. All three targets are little-endian and KaganFS uses fixed-width fields, so the same disk image works everywhere. \\
 \end{xltabular}}
 
 \begin{decisionbox}{Why monolithic rather than a microkernel?}
@@ -207,8 +207,8 @@ chain, networks, malicious hardware, side channels) live in \texttt{docs/securit
 
 \begin{decisionbox}{When the references disagree}
 The reference texts span fifteen years, from \OSDI (2006) to \LKP (2021), and sometimes describe different ways to
-do the same job. The rule: adopt the newer practice when it also suits Turk-OS, and keep the older one when it is
-simpler and the newer one only pays off in a much larger kernel. So Turk-OS
+do the same job. The rule: adopt the newer practice when it also suits Kagan, and keep the older one when it is
+simpler and the newer one only pays off in a much larger kernel. So Kagan
 \textbf{adopts} printk-style log levels and a \code{dmesg} buffer (Phase~2), top and bottom halves for interrupts
 (Phase~4), the 0/\code{-E} and \code{ERR_PTR} error convention (Phase~7), saturating \code{refcount_t} counters and
 a run-time lock-order check (Phase~9). It \textbf{stages} the buddy page allocator after the bitmap (Phase~5) and
@@ -232,7 +232,7 @@ second, and it prepares the ground for the 64-bit x86 extension of Phase 15.
 \section{The phase map}
 
 The nineteen phases fall into five stages. Arrows show the build order. Each phase depends on everything before it.
-The first four stages lead to Turk-OS 1.0; the fifth ports it and leads to Turk-OS 2.0.
+The first four stages lead to Kagan 1.0; the fifth ports it and leads to Kagan 2.0.
 
 \begin{figure}[H]
 \centering
@@ -261,9 +261,9 @@ The first four stages lead to Turk-OS 1.0; the fifth ports it and leads to Turk-
 \node[s3] (p10) at (8.2,-4)  {\textbf{P10\enspace User mode}\\ring 3, system calls};
 \node[s3] (p11) at (12.3,-4) {\textbf{P11\enspace Process API}\\fork, exec, wait, COW};
 \node[s4] (p12) at (12.3,-6) {\textbf{P12\enspace Storage}\\ATA driver, buffer cache};
-\node[s4] (p13) at (8.2,-6)  {\textbf{P13\enspace File systems}\\VFS, initrd, TurkFS};
+\node[s4] (p13) at (8.2,-6)  {\textbf{P13\enspace File systems}\\VFS, initrd, KaganFS};
 \node[s4] (p14) at (4.1,-6)  {\textbf{P14\enspace Userland}\\libc, shell, pipes};
-\node[s4] (p15) at (0,-6)    {\textbf{P15\enspace Turk-OS 1.0}\\hardening, release};
+\node[s4] (p15) at (0,-6)    {\textbf{P15\enspace Kagan 1.0}\\hardening, release};
 \node[s5] (p16) at (0,-8)    {\textbf{P16\enspace Portability}\\arch layer, devicetree};
 \node[s5] (p17) at (4.1,-8)  {\textbf{P17\enspace RISC-V port}\\Sv32, SBI, virtio};
 \node[s5] (p18) at (8.2,-8)  {\textbf{P18\enspace ARM port}\\AArch64, GIC, MMU};
@@ -299,15 +299,15 @@ spaces and talk to the kernel through system calls. The stage ends with the UNIX
 copy-on-write, \texttt{exec}, \texttt{wait} and \texttt{exit}.
 
 \textbf{Stage IV, Persistence and userland (Phases 12--15).} A disk driver and buffer cache provide storage, a VFS
-and TurkFS provide files, and a C library, shell and utilities complete a usable system. The last phase hardens,
+and KaganFS provide files, and a C library, shell and utilities complete a usable system. The last phase hardens,
 measures and documents it, and tags release 1.0; it also specifies the optional extensions.
 
 \textbf{Stage V, Ports (Phases 16--18).} First the architecture layer is separated: everything x86 moves behind
 one interface, the generic code learns to compile for other machines, and the kernel learns to read a devicetree
-instead of Multiboot (16). Then Turk-OS is ported to 32-bit RISC-V on QEMU's \texttt{virt} board, with OpenSBI as
+instead of Multiboot (16). Then Kagan is ported to 32-bit RISC-V on QEMU's \texttt{virt} board, with OpenSBI as
 the firmware, and optionally to the custom Timur-RV32IMC core (17). Finally it is ported to 64-bit ARM (AArch64) on
-QEMU's \texttt{virt} board, and optionally to a Raspberry Pi 4. The stage ends with Turk-OS 2.0: the same kernel,
-userland and TurkFS image on three architectures (18).
+QEMU's \texttt{virt} board, and optionally to a Raspberry Pi 4. The stage ends with Kagan 2.0: the same kernel,
+userland and KaganFS image on three architectures (18).
 
 \section{Phase summary}
 
@@ -337,19 +337,19 @@ userland and TurkFS image on three architectures (18).
 10 & User mode and system calls & TSS, ring 3, \texttt{int 0x80}, checked user-memory access, validating ELF loader, threat model, first user programs \\
 11 & Process API & \texttt{fork} (copy-on-write), \texttt{exec}, \texttt{wait}, \texttt{exit}, \texttt{brk}, basic signals, system call fuzzer \\
 12 & Storage & ATA PIO driver, block layer, MBR partitions, buffer cache \\
-13 & File systems & VFS, file descriptors, tar initrd, writable TurkFS that rejects corrupted images \\
-14 & Userland & Turk-libc, pipes, tty line discipline, \texttt{tsh} shell, coreutils \\
+13 & File systems & VFS, file descriptors, tar initrd, writable KaganFS that rejects corrupted images \\
+14 & Userland & Kagan libc, pipes, tty line discipline, \texttt{kash} shell, coreutils \\
 15 & Hardening and release & Final security audit, users, permissions and sessions, benchmarks, docs, a reproducible and signed v1.0; optional tracks \\
 \midrule
 16 & Portability: an architecture layer & x86 moved to \texttt{kernel/arch/i386}, \texttt{include/arch.h}, \texttt{struct bootinfo}, a host-tested devicetree parser, one Makefile for three \texttt{ARCH} values \\
-17 & The RISC-V port & Turk-OS on \texttt{qemu-system-riscv32 -machine virt}: OpenSBI, Sv32, PLIC, virtio-blk, boot to \texttt{tsh}; optionally the Timur-RV32IMC core \\
-18 & The ARM port & Turk-OS on \texttt{qemu-system-aarch64 -machine virt}: EL1, GICv2, generic timer, MMU, LP64 userland; v2.0 on three architectures; optionally a Raspberry Pi 4 \\
+17 & The RISC-V port & Kagan on \texttt{qemu-system-riscv32 -machine virt}: OpenSBI, Sv32, PLIC, virtio-blk, boot to \texttt{kash}; optionally the Timur-RV32IMC core \\
+18 & The ARM port & Kagan on \texttt{qemu-system-aarch64 -machine virt}: EL1, GICv2, generic timer, MMU, LP64 userland; v2.0 on three architectures; optionally a Raspberry Pi 4 \\
 \end{longtable}
 \end{center}
 
 
 
-\section{What Turk-OS 1.0 and 2.0 look like}
+\section{What Kagan 1.0 and 2.0 look like}
 
 Figure~\ref{fig:arch} shows the finished 1.0 system and the phase that builds each part. It is worth coming back to
 this picture as the map of where each piece fits. Figure~\ref{fig:arch2} shows what Stage V changes: the
@@ -363,14 +363,14 @@ generic kernel stays one body of code, and everything that depends on the proces
     align=center, inner sep=2pt, line width=0.6pt, anchor=north west},
   ph/.style={text=tkRed, font=\sffamily\scriptsize\bfseries},
 ]
-\node[layer, fill=tkGreen!10, minimum width=4.2cm, text width=4.0cm] at (0,0)    {init, \texttt{tsh} shell, coreutils\\{\color{tkRed}\bfseries P11, P14}};
-\node[layer, fill=tkGreen!10, minimum width=4.2cm, text width=4.0cm] at (4.35,0) {Turk-libc: stdio, malloc, string\\{\color{tkRed}\bfseries P14}};
+\node[layer, fill=tkGreen!10, minimum width=4.2cm, text width=4.0cm] at (0,0)    {init, \texttt{kash} shell, coreutils\\{\color{tkRed}\bfseries P11, P14}};
+\node[layer, fill=tkGreen!10, minimum width=4.2cm, text width=4.0cm] at (4.35,0) {Kagan libc: stdio, malloc, string\\{\color{tkRed}\bfseries P14}};
 \node[layer, fill=tkGreen!10, minimum width=4.3cm, text width=4.1cm] at (8.7,0)  {user ELF programs\\{\color{tkRed}\bfseries P10, P11}};
 \node[layer, fill=tkRed!8, minimum width=13cm, text width=12.8cm, minimum height=0.8cm] at (0,-1.25)
   {System call interface: \texttt{int 0x80}, argument checks, \texttt{copy\_from\_user} / \texttt{copy\_to\_user}\quad{\color{tkRed}\bfseries P10}};
 \node[layer, fill=tkBlue!7, minimum width=3.1cm, text width=2.95cm, minimum height=1.25cm] at (0,-2.25)    {Processes and scheduler\\fork, exec, signals\\{\color{tkRed}\bfseries P8, P11}};
 \node[layer, fill=tkBlue!7, minimum width=3.1cm, text width=2.95cm, minimum height=1.25cm] at (3.3,-2.25)  {Memory\\PMM, VMM, heap, COW\\{\color{tkRed}\bfseries P5--P7, P11}};
-\node[layer, fill=tkBlue!7, minimum width=3.1cm, text width=2.95cm, minimum height=1.25cm] at (6.6,-2.25)  {VFS\\tarfs, TurkFS, devfs, pipes\\{\color{tkRed}\bfseries P13, P14}};
+\node[layer, fill=tkBlue!7, minimum width=3.1cm, text width=2.95cm, minimum height=1.25cm] at (6.6,-2.25)  {VFS\\tarfs, KaganFS, devfs, pipes\\{\color{tkRed}\bfseries P13, P14}};
 \node[layer, fill=tkBlue!7, minimum width=3.1cm, text width=2.95cm, minimum height=1.25cm] at (9.9,-2.25)  {Synchronization\\spinlocks, mutexes, sems\\{\color{tkRed}\bfseries P9}};
 \node[layer, fill=tkAmber!10, minimum width=13cm, text width=12.8cm, minimum height=0.8cm] at (0,-3.7)
   {Drivers: VGA, serial, keyboard, PIT, tty, ATA, RAM disk, block layer, buffer cache\quad{\color{tkRed}\bfseries P2, P4, P12, P14}};
@@ -385,7 +385,7 @@ generic kernel stays one body of code, and everything that depends on the proces
 \draw[decorate, decoration={brace, amplitude=5pt, mirror}, tkGray, line width=0.7pt] (-0.15,-5.9) -- (-0.15,-6.7)
   node[midway, left=6pt, font=\sffamily\scriptsize\bfseries, text=tkGray, align=right] {hardware};
 \end{tikzpicture}
-\caption{Layers of Turk-OS 1.0, with the phase that builds each part.}
+\caption{Layers of Kagan 1.0, with the phase that builds each part.}
 \label{fig:arch}
 \end{figure}
 
@@ -398,9 +398,9 @@ generic kernel stays one body of code, and everything that depends on the proces
   col/.style={layer, minimum width=4.2cm, text width=4.0cm, minimum height=1.6cm},
 ]
 \node[wide, fill=tkGreen!10] at (0,0)
-  {\textbf{User space}, rebuilt for each architecture: init, \texttt{tsh}, coreutils, Turk-libc\\\texttt{crt0} and system-call stubs in \texttt{user/arch/<arch>/}\quad{\color{tkRed}\bfseries P17, P18}};
+  {\textbf{User space}, rebuilt for each architecture: init, \texttt{kash}, coreutils, Kagan libc\\\texttt{crt0} and system-call stubs in \texttt{user/arch/<arch>/}\quad{\color{tkRed}\bfseries P17, P18}};
 \node[wide, fill=tkBlue!7] at (0,-1.05)
-  {\textbf{Generic kernel}, one source for all three architectures\\system calls, processes and scheduler, memory, VFS, TurkFS, buffer cache, tty, \texttt{ktest}\quad{\color{tkRed}\bfseries P16}};
+  {\textbf{Generic kernel}, one source for all three architectures\\system calls, processes and scheduler, memory, VFS, KaganFS, buffer cache, tty, \texttt{ktest}\quad{\color{tkRed}\bfseries P16}};
 \node[wide, fill=tkAmber!10] at (0,-2.1)
   {\textbf{Drivers}: the 16550 core with port-I/O or MMIO accessors, ATA (x86), PL011 (ARM)\\virtio-mmio and virtio-blk, shared by both ports; the devicetree parser \texttt{lib/fdt.c}\quad{\color{tkRed}\bfseries P16--P18}};
 \node[wide, fill=tkRed!8] at (0,-3.15)
@@ -426,14 +426,14 @@ generic kernel stays one body of code, and everything that depends on the proces
 \draw[decorate, decoration={brace, amplitude=5pt, mirror}, tkGray, line width=0.7pt] (-0.15,-6.0) -- (-0.15,-7.6)
   node[midway, left=6pt, font=\sffamily\scriptsize\bfseries, text=tkGray, align=right] {boards};
 \end{tikzpicture}
-\caption{Turk-OS 2.0 after Stage V: one generic kernel, one architecture interface, three backends and three boards.}
+\caption{Kagan 2.0 after Stage V: one generic kernel, one architecture interface, three backends and three boards.}
 \label{fig:arch2}
 \end{figure}
 
 The source tree grows into the layout below; each phase document states which directories it adds. The entries marked \texttt{(Stage V)} arrive in Phases 16--18.
 
-\begin{lst}{plain}{Turk-OS/ (layout at 1.0, plus the Stage V additions)}
-Turk-OS/
+\begin{lst}{plain}{kagan-os/ (layout at 1.0, plus the Stage V additions)}
+kagan-os/
 |-- docs/                  design documents (LaTeX), journal.md, security/
 |   `-- porting.md         the leak audit and architecture-interface notes        (Stage V)
 |-- boot/                  loader.s (Multiboot entry), grub.cfg
@@ -447,7 +447,7 @@ Turk-OS/
 |   |-- mm/                pmm.c vmm.c heap.c
 |   |-- proc/              task.c sched.c fork.c exec.c signal.c
 |   |-- sync/              spinlock.c mutex.c semaphore.c waitq.c
-|   |-- fs/                vfs.c file.c tarfs.c turkfs.c devfs.c pipe.c
+|   |-- fs/                vfs.c file.c tarfs.c kaganfs.c devfs.c pipe.c
 |   |-- drivers/           vga.c serial.c keyboard.c tty.c ata.c ramdisk.c blockdev.c bcache.c
 |   |                      + uart16550.c pl011.c virtio_mmio.c virtio_blk.c       (Stage V)
 |   |-- syscall/           syscall.c uaccess.c
@@ -457,13 +457,13 @@ Turk-OS/
 |-- include/               kernel headers
 |                          + arch.h and bootinfo.h                                (Stage V)
 |-- user/
-|   |-- libc/              Turk-libc
+|   |-- libc/              Kagan libc
 |   |-- arch/<arch>/       crt0 and system call stubs for each architecture       (Stage V)
-|   |-- init/ sh/ bin/     init, tsh, coreutils
+|   |-- init/ sh/ bin/     init, kash, coreutils
 |   `-- user.ld
 |-- tests/                 ktest suites
 |   `-- data/              devicetree blobs dumped from QEMU, for the FDT tests   (Stage V)
-|-- tools/                 mkturkfs.c and helper scripts
+|-- tools/                 mkkaganfs.c and helper scripts
 |-- link.ld
 `-- Makefile
 \end{lst}
@@ -499,7 +499,7 @@ Long single-maintainer project stalls & Medium & Every phase ends in a testable,
 Stage V: x86 habits carried into the ports (a forgotten \texttt{sfence.vma}, missing TLB maintenance or barriers) & High & Check every step against the specification, single-step in GDB, and compare with xv6-riscv or Linux. \\
 Stage V: QEMU is more forgiving than real hardware (caches, alignment, uninitialised registers) & Medium & Keep real hardware optional and last: the QEMU milestone comes first and counts on its own. \\
 Stage V: toolchain trouble with new targets (multilib, \texttt{-march} strings with \texttt{\_zicsr}) & Medium & Section~9 of \texttt{docs/setup.md}, \emph{Toolchains for the ports}, and the Phase 16 checklist (Task 16.1). \\
-Stage V: the custom core lacks a feature Turk-OS needs (S-mode, an MMU, a timer) & Medium & Task 17.13's requirements checklist. The QEMU milestone stands on its own without the core. \\
+Stage V: the custom core lacks a feature Kagan needs (S-mode, an MMU, a timer) & Medium & Task 17.13's requirements checklist. The QEMU milestone stands on its own without the core. \\
 Stage V: scope creep (SMP, graphics on the ports) & Medium & The Stage V exit criteria are the definition of done. \\
 \end{longtable}
 \end{center}
@@ -533,12 +533,12 @@ A phase is complete when every one of its exit criteria holds.
   \item \textbf{P10}\enspace Ring-3 program prints through \texttt{write}; faulty and malicious programs are killed or get errors, the kernel survives; malformed ELF files are rejected; every system call has a row in the boundary table.
   \item \textbf{P11}\enspace \texttt{fork}/\texttt{exec}/\texttt{wait} chain works; copy-on-write verified, also through \texttt{copy\_to\_user}; no leaks over 1000 forks; ten minutes of fuzzing without a panic.
   \item \textbf{P12}\enspace QEMU disk identified; data survives reboot; partitions detected and corrupted tables rejected; buffer cache in use.
-  \item \textbf{P13}\enspace Files written by Turk-OS pass \texttt{fsck.minix} on the host; file descriptor semantics tested; corrupted images are rejected without a panic; the parsers survive an hour of host fuzzing.
-  \item \textbf{P14}\enspace Boots to the \texttt{tsh} prompt; pipes, redirection and Ctrl+C work; coreutils present; resource limits enforced.
+  \item \textbf{P13}\enspace Files written by Kagan pass \texttt{fsck.minix} on the host; file descriptor semantics tested; corrupted images are rejected without a panic; the parsers survive an hour of host fuzzing.
+  \item \textbf{P14}\enspace Boots to the \texttt{kash} prompt; pipes, redirection and Ctrl+C work; coreutils present; resource limits enforced.
   \item \textbf{P15}\enspace One hour of fuzzing as an ordinary user without a panic; permission and session tests pass; benchmarks, docs and the threat model finished; two clean builds match and v1.0 is tagged and signed.
   \item \textbf{P16}\enspace Generic code free of x86 (audit in \texttt{docs/porting.md}); \texttt{make ARCH=i386 test} passes; generic code compiles for riscv32 and aarch64 without warnings; FDT parser passes its host tests.
-  \item \textbf{P17}\enspace \texttt{qemu-system-riscv32 -machine virt} boots to the \texttt{tsh} prompt; \texttt{make ARCH=riscv32 test} passes, evil programs included; W\textasciicircum X holds; a TurkFS image written on RISC-V passes \texttt{fsck.minix}.
-  \item \textbf{P18}\enspace \texttt{qemu-system-aarch64 -machine virt} boots to the \texttt{tsh} prompt; \texttt{make ARCH=aarch64 test} passes, evil programs included; W\textasciicircum X holds; the same TurkFS image works on all three; v2.0 tagged.
+  \item \textbf{P17}\enspace \texttt{qemu-system-riscv32 -machine virt} boots to the \texttt{kash} prompt; \texttt{make ARCH=riscv32 test} passes, evil programs included; W\textasciicircum X holds; a KaganFS image written on RISC-V passes \texttt{fsck.minix}.
+  \item \textbf{P18}\enspace \texttt{qemu-system-aarch64 -machine virt} boots to the \texttt{kash} prompt; \texttt{make ARCH=aarch64 test} passes, evil programs included; W\textasciicircum X holds; the same KaganFS image works on all three; v2.0 tagged.
 \end{checklist}
 
 \booklegend

@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 \phaseheader{2}{Getting to C: Screen, Serial and kprintf}{Give the kernel a stack, jump into C, and build the two output channels used for debugging for the rest of the project}{10}{16}
@@ -10,7 +10,7 @@ port (so it appears in the host terminal), and has \code{kprintf}, \code{panic} 
 
 \section{Scope and motivation}
 
-From now on, most of Turk-OS is written in C. Getting there takes one small piece of assembly (a stack) and a few
+From now on, most of Kagan is written in C. Getting there takes one small piece of assembly (a stack) and a few
 compiler flags. Right after that comes the most important debugging tool in the kernel: a way to print. With no
 operating system underneath, \code{printf} does not exist, so this phase writes the drivers it would normally sit on.
 
@@ -102,7 +102,7 @@ itself.
 \begin{readingplan}
 \must & \LOB & Ch.~3 \emph{Getting to C}: stack, calling C from assembly, packing structs, compiling C, build tools & 19--22 & Tasks 2.1--2.3 almost step by step. \\
 \must & \LOB & Ch.~4 \emph{Output}: framebuffer, cursor, serial port, configuring the line, buffers and modem & 23--31 & The two drivers of this phase. \\
-\must & \OSTEP & Ch.~36 \emph{I/O Devices} (\S36.1--36.7: canonical device, protocol, interrupts, DMA, device interaction, drivers) & 405--412 & The device model behind every Turk-OS driver. \\
+\must & \OSTEP & Ch.~36 \emph{I/O Devices} (\S36.1--36.7: canonical device, protocol, interrupts, DMA, device interaction, drivers) & 405--412 & The device model behind every Kagan driver. \\
 \should & \MOS & \S5.1 \emph{Principles of I/O Hardware}, especially \S5.1.3 \emph{Memory-Mapped I/O} & 337--351 & Why x86 has both port and memory-mapped I/O. \\
 \should & \MOS & \S5.6.2 \emph{Output Software} (text windows, escape sequences) & 399--405 & How a text console turns bytes into a screen. \\
 \should & \OSDI & \S3.8.6 \emph{Implementation of the Display Driver} & 357--366 & MINIX writing to video memory and scrolling. \\
@@ -115,7 +115,7 @@ itself.
 Open \texttt{drivers/tty/console.c (15900)} in \OSDI. MINIX keeps a per-console struct with the cursor position and
 the video memory address, and it scrolls either by copying memory or by moving the hardware's display start.
 Its \code{out_char} and \code{scroll_screen} correspond to Task~2.5. The MINIX console
-driver runs as a separate process and receives characters in messages; in Turk-OS it is an ordinary function call.
+driver runs as a separate process and receives characters in messages; in Kagan it is an ordinary function call.
 
 \par\smallskip\textbf{Linux, for comparison.} \LKP Linux's \code{printk} does not write to the screen directly. It appends every message, tagged with a log level, to a ring buffer in memory; console drivers drain the buffer, and \code{dmesg} reads it back long after the screen has scrolled. Task~2.7 copies that design.
 \end{minixbox}
@@ -412,7 +412,7 @@ CON               shared data has a lock; no lock held across sleep
 Check that \code{magic} equals \code{0x2BADB002}; otherwise panic with ``not loaded by a Multiboot loader''. Define
 the beginning of the Multiboot information structure as a packed struct (see \LOB\,``Packing Structs'' and the
 Multiboot spec \S3.3). If bit 0 of \code{flags} is set, \code{mem_lower} and \code{mem_upper} hold the KiB of memory
-below 1\,MiB and above 1\,MiB. Print a banner: \code{Turk-OS 0.2 - 127 MiB RAM}.
+below 1\,MiB and above 1\,MiB. Print a banner: \code{Kagan 0.2 - 127 MiB RAM}.
 
 \begin{lst}{c}{include/multiboot.h (first fields)}
 struct multiboot_info {
@@ -452,7 +452,7 @@ Build fails: \code{function declaration isn't a prototype} & \code{-Wstrict-prot
 \begin{milestonebox}[The kernel can talk]
 \begin{checklist}
   \item \code{kmain} runs on the kernel's own 16\,KiB stack and receives the Multiboot magic and information pointer.
-  \item The screen shows a coloured Turk-OS banner with the RAM size, and scrolling works.
+  \item The screen shows a coloured Kagan banner with the RAM size, and scrolling works.
   \item The same messages appear in the host terminal through the serial port.
   \item \code{kprintf} passes the edge-case tests; \code{panic} and \code{ASSERT} print file and line and halt.
   \item The Makefile builds C and assembly, links with \code{libgcc}, and \code{make run} opens serial on stdio.

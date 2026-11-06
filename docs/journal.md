@@ -1,4 +1,4 @@
-# Turk-OS engineering journal
+# Kagan engineering journal
 
 One entry per work session, newest at the bottom. The journal records design decisions, what was tried, what broke
 and why. It is the evidence behind each phase's exit criteria and the starting point of every bug report.

@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 \phaseheader{8}{Processes, Context Switching and Scheduling}{Run many things at once on one CPU: kernel threads, the context switch, and a preemptive scheduler driven by the timer}{48}{56}
@@ -11,11 +11,11 @@ task exit with reaping, and a \code{ps} command. Optionally, a fair scheduler in
 
 \section{Scope and motivation}
 
-This is where Turk-OS stops being a program and becomes an operating system. A single CPU can only run one
+This is where Kagan stops being a program and becomes an operating system. A single CPU can only run one
 instruction stream at a time, but by switching between streams quickly enough, the kernel creates the illusion that
 many run at once. \OSTEP calls this \emph{virtualizing the CPU}, and it is the first of its three big ideas.
 
-Turk-OS builds it in two layers, as the textbooks do. The \textbf{mechanism} is the context switch: saving everything
+Kagan builds it in two layers, as the textbooks do. The \textbf{mechanism} is the context switch: saving everything
 that describes one running thread and restoring another. The \textbf{policy} is the scheduler: deciding which thread
 runs next and for how long. The first tasks are kernel threads, which all share the kernel's address space; in Phase 10
 the same machinery switches between user processes with separate address spaces. The context switch is short and
@@ -27,7 +27,7 @@ subtle, and every later phase depends on it.
 
 \OSTEP chapter 4 defines a process by its \textbf{machine state}: the registers (including the instruction and stack
 pointers), the memory it can address, and the I/O resources it holds. The kernel keeps this state in a
-\textbf{process control block} (PCB), which Turk-OS calls \code{struct task}, and tracks every task's
+\textbf{process control block} (PCB), which Kagan calls \code{struct task}, and tracks every task's
 \textbf{state} (Figure~\ref{fig:states}). A task is \emph{running} on the CPU, \emph{ready} to run and waiting its turn,
 \emph{blocked} waiting for an event (a timer, a key, a disk block), or a \emph{zombie} that has finished but whose
 resources have not been reclaimed yet.
@@ -48,7 +48,7 @@ resources have not been reclaimed yet.
   \draw (blk) edge[bend left=15] node[left, lab] {event happened\ \ } (ready);
   \draw (run) edge node[above, lab] {exit} (zom);
 \end{tikzpicture}
-\caption{Task states in Turk-OS. Only the scheduler moves a task into \emph{running}.}
+\caption{Task states in Kagan. Only the scheduler moves a task into \emph{running}.}
 \label{fig:states}
 \end{figure}
 
@@ -94,7 +94,7 @@ interrupt from several seconds ago (Figure~\ref{fig:switch}).
 With the mechanism in place, the scheduler decides who runs. \OSTEP chapter 7 introduces the metrics:
 \textbf{turnaround time} (from arrival to completion) and \textbf{response time} (from arrival to first run). Policies
 like shortest-job-first optimise turnaround but need to know the future. \textbf{Round-robin} (RR) gives each ready
-task a fixed \textbf{time slice} (quantum) in turn, which is excellent for response time and is what Turk-OS starts
+task a fixed \textbf{time slice} (quantum) in turn, which is excellent for response time and is what Kagan starts
 with. Chapter 8's \textbf{multi-level feedback queue} (MLFQ) keeps several RR queues at different priorities, lowers
 the priority of tasks that use their whole slice (CPU-bound work), and periodically boosts everyone to prevent
 starvation. It favours interactive tasks without knowing anything about them in advance, which is why variants of it
@@ -129,7 +129,7 @@ MINIX keeps each process's saved registers \emph{in the process table} (\code{p_
 interrupted process's registers into its table entry, the kernel runs on one shared stack, and \code{restart} loads
 whichever process was chosen. \code{enqueue}, \code{dequeue} and \code{pick_proc} in \texttt{kernel/proc.c (07400)}
 manage 16 priority queues. This works for MINIX because its kernel never blocks in the middle of a call: work that has
-to wait is done by user-space servers. Turk-OS gives every task its own kernel stack, like Linux and xv6, so a task can
+to wait is done by user-space servers. Kagan gives every task its own kernel stack, like Linux and xv6, so a task can
 block anywhere inside the kernel (in the middle of a disk read, for example) and resume there later.
 
 \par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux's normal scheduler is CFS, the Completely Fair Scheduler: each task accumulates \textbf{virtual runtime}, weighted by its priority, and the scheduler always runs the task with the smallest one, kept in a red-black tree. Round-robin and MLFQ survive only in the real-time and historical policies. Task~8.9 builds a small CFS.
@@ -199,7 +199,7 @@ The kernel never does: add \code{-mgeneral-regs-only} (GCC 7 or later) to the ke
 the compiler never emits a floating-point or SSE instruction in kernel code. User programs (Phase~10) are another
 matter. If two of them use \code{double} and the kernel switches between them without saving these registers, each
 one computes with the other's values, and one can read what the other was working on. There are two clean policies.
-The first, which Turk-OS takes, saves and restores the state on every switch with \code{fxsave} and \code{fxrstor},
+The first, which Kagan takes, saves and restores the state on every switch with \code{fxsave} and \code{fxrstor},
 into a 512-byte area per task that must be 16-byte aligned (the \code{fpu} field above: \code{kmalloc} returns
 16-byte aligned blocks, and a slab cache for \code{struct task} must keep its objects aligned the same way). A new task
 starts from the clean state that \code{fninit} produces. The second forbids floating point in user space: build
@@ -399,7 +399,7 @@ Queue corruption under load & \code{schedule()} entered with interrupts enabled,
 
 \section{Exit criteria}
 
-\begin{milestonebox}[Turk-OS multitasks]
+\begin{milestonebox}[Kagan multitasks]
 \begin{checklist}
   \item Kernel threads run with their own 16\,KiB stacks and guard pages.
   \item \code{switch_context} and \code{task_trampoline} work, with every instruction documented.
@@ -420,7 +420,7 @@ Queue corruption under load & \code{schedule()} entered with interrupts enabled,
   \item Round-robin versus MLFQ: what problem does MLFQ solve, and why does it need a periodic priority boost?
   \item How does a vruntime scheduler choose the next task, and why must a task that slept for a minute not keep its old, small vruntime?
   \item Why can't a task free its own kernel stack in \code{task_exit}?
-  \item MINIX saves registers in the process table and uses a single kernel stack. What can Turk-OS do that MINIX's kernel can't, and what does it cost?
+  \item MINIX saves registers in the process table and uses a single kernel stack. What can Kagan do that MINIX's kernel can't, and what does it cost?
 \end{enumerate}
 \end{questionbox}
 

@@ -1,7 +1,7 @@
-% turkos.sty -- shared look and macros for the Turk-OS design documents.
-% Every phase document does \usepackage{turkos}; .latexmkrc puts common/ on TEXINPUTS.
+% kagan.sty -- shared look and macros for the Kagan design documents.
+% Every phase document does \usepackage{kagan}; .latexmkrc puts common/ on TEXINPUTS.
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesPackage{turkos}[2026/09/25 Turk-OS design-document style]
+\ProvidesPackage{kagan}[2026/09/25 Kagan design-document style]
 
 % ---------------------------------------------------------------- page, fonts
 \RequirePackage[a4paper,top=2.4cm,bottom=2.4cm,left=2.3cm,right=2.3cm,headheight=15pt]{geometry}
@@ -93,7 +93,7 @@
 \newcommand{\headlabel}{}
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{\sffamily\footnotesize\textcolor{tkGray}{Turk-OS Design Documents}}
+\fancyhead[L]{\sffamily\footnotesize\textcolor{tkGray}{Kagan Design Documents}}
 \fancyhead[R]{\sffamily\footnotesize\textcolor{tkGray}{\headlabel}}
 \fancyfoot[C]{\sffamily\footnotesize\textcolor{tkGray}{\thepage}}
 \renewcommand{\headrulewidth}{0.4pt}
@@ -125,7 +125,7 @@
 \newcommand{\phaseheader}[5]{%
   \renewcommand{\phasenum}{#1}\renewcommand{\phasetitle}{#2}%
   \renewcommand{\headlabel}{Phase #1 \textperiodcentered\ #2}%
-  \hypersetup{pdftitle={Turk-OS Phase #1: #2}, pdfauthor={Turk-OS}}%
+  \hypersetup{pdftitle={Kagan Phase #1: #2}, pdfauthor={Kagan}}%
   \thispagestyle{plain}%
   \noindent\begin{tikzpicture}
     \path[use as bounding box] (0,0) rectangle (\linewidth,3.3cm);
@@ -140,9 +140,9 @@
 }
 
 % \tkprogress{from}{to} -- overall progress bar, this phase highlighted in red.
-% Stage V documents (Phases 16-18) measure toward Turk-OS 2.0 instead: put
+% Stage V documents (Phases 16-18) measure toward Kagan 2.0 instead: put
 % \renewcommand{\progresslabel}{...} before \phaseheader.
-\newcommand{\progresslabel}{Overall progress toward Turk-OS 1.0 (this phase in red)}
+\newcommand{\progresslabel}{Overall progress toward Kagan 1.0 (this phase in red)}
 \newcommand{\tkprogress}[2]{%
   \begin{tikzpicture}
     \path[use as bounding box] (0cm,-0.45cm) rectangle (\linewidth,0.25cm);
@@ -346,7 +346,7 @@
   \LKP & Kaiwan N.\ Billimoria. \emph{Linux Kernel Programming}, Packt, 2021. Modern kernel practice: logging, allocators, the scheduler, synchronisation. \\
   \end{tabularx}\par\smallskip
   \LOB and \OSTEP are freely available; the roadmap lists ISBNs for the others.
-  Where sources disagree, the design follows the newer one when its method also suits Turk-OS.
+  Where sources disagree, the design follows the newer one when its method also suits Kagan.
   Page numbers are the \emph{printed} page numbers of these editions, not PDF page indices. With another edition, or with the free
   \OSTEP chapters (each one starts at page~1), find the reading by its chapter and section numbers.
   MINIX source references like \texttt{kernel/proc.c (07400)} give the file and its starting line in \OSDI Appendix B.

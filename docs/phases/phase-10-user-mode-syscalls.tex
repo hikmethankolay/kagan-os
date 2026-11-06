@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 \phaseheader{10}{User Mode and System Calls}{Run programs in ring 3, each in its own address space, and let them ask the kernel for services through a single, carefully guarded door}{62}{70}
@@ -39,7 +39,7 @@ When an interrupt or trap arrives while the CPU is in ring 3, it can't keep usin
 that memory, and ESP might point anywhere. So the CPU switches to a kernel stack first, and it finds that stack in the
 \textbf{task state segment} (TSS): fields \code{ss0} and \code{esp0}. Then it pushes the user's SS and ESP followed by
 the usual EFLAGS, CS and EIP (Figure~\ref{fig:ringchange}); these are the \code{useresp} and \code{ss} fields reserved
-at the top of \code{struct regs} in Phase 3. \code{iret} reverses the whole thing. Turk-OS uses the TSS only for this;
+at the top of \code{struct regs} in Phase 3. \code{iret} reverses the whole thing. Kagan uses the TSS only for this;
 x86 hardware task switching is ignored. Because each task has its own kernel stack, the scheduler must update
 \code{esp0} on every context switch.
 
@@ -82,7 +82,7 @@ kernel is mapped in every address space, user code can't touch it.
   \node[a] at ([xshift=-4pt]img.south west) {0x00400000};
   \node[a] at ([xshift=-4pt]z.south west) {0x00000000};
 \end{tikzpicture}
-\caption{The address space of a Turk-OS user process.}
+\caption{The address space of a Kagan user process.}
 \label{fig:uas}
 \end{figure}
 
@@ -104,7 +104,7 @@ A user program is an \textbf{ELF} executable. Its header gives the entry point a
 headers}, and each \code{PT_LOAD} header says: take \code{p_filesz} bytes at offset \code{p_offset} in the file, place
 them at virtual address \code{p_vaddr}, and zero the rest up to \code{p_memsz} (that tail is \code{.bss}). The loader
 allocates and maps pages, copies, zeroes, sets up a user stack, and jumps. \OSC\,\S2.5 covers linkers and loaders.
-Until Turk-OS has a file system (Phase 13), programs arrive as \textbf{Multiboot modules}: GRUB (or QEMU's
+Until Kagan has a file system (Phase 13), programs arrive as \textbf{Multiboot modules}: GRUB (or QEMU's
 \code{-initrd}) loads extra files into memory and lists them in the Multiboot information, just as \LOB chapter 7 does.
 
 \section{References}
@@ -133,10 +133,10 @@ In MINIX, a POSIX call like \code{read} is not a kernel call at all. The library
 kernel's only job is to deliver that message to a user-space server (the file system or the process manager) through
 \code{sys_call} in \texttt{kernel/proc.c (07400)}. When a server needs something privileged, such as copying data
 between address spaces or writing an I/O port, it sends a \emph{kernel call} to the \textbf{system task},
-\texttt{kernel/system.c (09700)}, described in \OSDI\,\S2.7. So MINIX has two layers of calls where Turk-OS has one:
+\texttt{kernel/system.c (09700)}, described in \OSDI\,\S2.7. So MINIX has two layers of calls where Kagan has one:
 an \code{int 0x80} goes straight to a kernel function.
 
-\par\smallskip\textbf{Linux, for comparison.} \LKD Linux on i386 enters system calls through \code{int 0x80} (or \code{sysenter}) into a table indexed by the number in \code{EAX}, and every user pointer goes through \code{copy_from_user} and \code{copy_to_user}, exactly as in Turk-OS.
+\par\smallskip\textbf{Linux, for comparison.} \LKD Linux on i386 enters system calls through \code{int 0x80} (or \code{sysenter}) into a table indexed by the number in \code{EAX}, and every user pointer goes through \code{copy_from_user} and \code{copy_to_user}, exactly as in Kagan.
 \end{minixbox}
 
 \section{Implementation}
@@ -216,7 +216,7 @@ Add stub 128 to \code{isr.s} and install it with \code{idt_set_gate(0x80, isr128
 \emph{trap} gate with DPL 3. DPL 3 lets ring 3 use it; the trap type leaves interrupts enabled during system calls,
 so a long call can be preempted like any other kernel code (the Phase 9 locks make that safe). Register a handler
 that dispatches on EAX. Use the Linux i386 numbers for the calls you implement; then any Linux reference table
-matches Turk-OS.
+matches Kagan.
 
 \begin{lst}{c}{kernel/syscall/syscall.c}
 enum { SYS_exit = 1, SYS_read = 3, SYS_write = 4, SYS_getpid = 20,

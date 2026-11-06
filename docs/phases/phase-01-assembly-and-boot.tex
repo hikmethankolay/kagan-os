@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 \phaseheader{1}{x86 Assembly and the Boot Process}{Enough assembly to read and write kernel glue code, and the path a PC takes from power-on to the kernel's first instruction}{5}{10}
@@ -10,13 +10,13 @@ assembly functions called from C, a 512-byte boot sector that prints a message, 
 
 \section{Scope and motivation}
 
-An operating system needs surprisingly little assembly. Turk-OS contains a few hundred lines of it in total. But those lines do the things C cannot do: set up the very first stack, load descriptor
+An operating system needs surprisingly little assembly. Kagan contains a few hundred lines of it in total. But those lines do the things C cannot do: set up the very first stack, load descriptor
 tables, save and restore registers on an interrupt, switch between processes, and drop into user mode. Code that cannot be
 read cannot be debugged. And the only way to see what is really happening when the kernel crashes is to
 read the machine state in terms of registers, the stack and instructions.
 
 The second half of the phase traces how a PC goes from power-on to running kernel code. The path is followed once by
-hand, with a boot sector the BIOS loads directly, and then handed to GRUB, which Turk-OS uses from here on.
+hand, with a boot sector the BIOS loads directly, and then handed to GRUB, which Kagan uses from here on.
 
 \section{Background}
 
@@ -50,7 +50,7 @@ have fixed jobs, and several of them will get a phase of their own.
 \small\renewcommand{\arraystretch}{1.25}
 \begin{tabularx}{\linewidth}{@{}l >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X@{}}
 \toprule
-\tkth{Register(s)} & \tkth{Job} & \tkth{Where Turk-OS uses it} \\
+\tkth{Register(s)} & \tkth{Job} & \tkth{Where Kagan uses it} \\
 \midrule
 EAX, EBX, ECX, EDX & general purpose; EAX holds function return values & everywhere; EAX also carries the system call number (Phase 10) \\
 ESI, EDI & general purpose; source and destination for string instructions & copying memory \\
@@ -95,7 +95,7 @@ destination comes first: \code{mov eax, 5} means \code{eax = 5}. Square brackets
 
 \subsection{The stack and the cdecl calling convention}
 
-C code compiled for 32-bit x86 follows the \textbf{cdecl} convention, and Turk-OS assembly must follow it too whenever
+C code compiled for 32-bit x86 follows the \textbf{cdecl} convention, and Kagan assembly must follow it too whenever
 it calls C or is called from C. The caller pushes the arguments \emph{right to left}, then executes \code{call},
 which pushes the return address. Inside the callee, the first argument is therefore at \code{[esp+4]}, the second at
 \code{[esp+8]}, and so on. The return value goes in EAX. The callee may freely overwrite EAX, ECX and EDX
@@ -142,7 +142,7 @@ registers, a 4\,GiB address space, privilege levels, and (later) paging. GRUB pe
   \node[tkbox, text width=2.3cm, right=of pw] (bios) {\textbf{BIOS firmware}\\self-test, finds a bootable device};
   \node[tkbox, text width=2.5cm, right=of bios] (mbr) {\textbf{Boot sector}\\512 bytes loaded at \code{0x7C00}, must end in \code{0x55 0xAA}};
   \node[tkbox, text width=2.5cm, right=of mbr] (grub) {\textbf{GRUB}\\enters protected mode, reads the Multiboot header};
-  \node[tkhi, text width=3.4cm, below=0.8cm of grub] (k) {\textbf{Turk-OS kernel} (\code{loader})\\loaded at 1\,MiB; \code{EAX = 0x2BADB002}, \code{EBX} = Multiboot info};
+  \node[tkhi, text width=3.4cm, below=0.8cm of grub] (k) {\textbf{Kagan kernel} (\code{loader})\\loaded at 1\,MiB; \code{EAX = 0x2BADB002}, \code{EBX} = Multiboot info};
   \node[tkok, text width=3.2cm, left=1.2cm of k] (q) {\textbf{\code{qemu -kernel}}\\QEMU's built-in Multiboot loader: skips BIOS and GRUB};
   \draw[tkarrow] (pw) -- (bios); \draw[tkarrow] (bios) -- (mbr); \draw[tkarrow] (mbr) -- (grub);
   \draw[tkarrow] (grub) -- (k); \draw[tkarrow, dashed] (q) -- (k);
@@ -158,7 +158,7 @@ goes at 1\,MiB, the first address above all of it.
 \centering
 \begin{tikzpicture}[m/.style={draw=tkNavy!70, minimum width=6.2cm, minimum height=0.52cm, font=\sffamily\scriptsize, fill=tkLight},
   a/.style={font=\ttfamily\scriptsize, anchor=east}]
-  \node[m, fill=tkGreen!10] (k) at (0,0) {extended memory: \textbf{Turk-OS kernel loaded here}};
+  \node[m, fill=tkGreen!10] (k) at (0,0) {extended memory: \textbf{Kagan kernel loaded here}};
   \node[m, below=0pt of k, fill=tkGray!15] (bios) {system BIOS ROM};
   \node[m, below=0pt of bios, fill=tkGray!15] (rom) {video BIOS and option ROMs};
   \node[m, below=0pt of rom, fill=tkAmber!12] (vga) {video memory (text buffer at \code{0xB8000})};
@@ -272,7 +272,7 @@ gcc -m32 -g playground/test_funcs.c build/funcs.o -o build/test_funcs && ./build
 
 \task{A boot sector that says hello}
 This is a deliberate detour: the first 512 bytes a PC executes from disk, in 16-bit real mode, using a BIOS
-service to print. Turk-OS itself does not use this code; GRUB replaces it in the next task.
+service to print. Kagan itself does not use this code; GRUB replaces it in the next task.
 
 \begin{lst}{asm}{playground/boot.s}
 bits 16                     ; the CPU is in 16-bit real mode
@@ -294,7 +294,7 @@ start:
     hlt
     jmp  .halt
 
-msg: db "Merhaba, Turk-OS!", 0
+msg: db "Merhaba, Kagan!", 0
 
 times 510 - ($ - $$) db 0   ; pad with zeros up to byte 510
 dw 0xAA55                   ; boot signature: bytes 0x55, 0xAA
@@ -310,7 +310,7 @@ qemu-system-i386 -drive format=raw,file=build/boot.bin
 the BIOS now refuses to boot the disk.}
 
 \task{Hello Cafebabe: a Multiboot kernel}
-The actual Turk-OS entry point, following \LOB chapter 2. The kernel only loads a recognisable value into EAX and
+The actual Kagan entry point, following \LOB chapter 2. The kernel only loads a recognisable value into EAX and
 spins, so inspecting the register proves the code is running. Put the Multiboot header in its own section
 and have the linker place it first, which guarantees it lands in the first 8\,KiB of the file.
 
@@ -370,7 +370,7 @@ kernel:
 set timeout=0
 set default=0
 
-menuentry "Turk-OS" {
+menuentry "Kagan" {
     multiboot /boot/kernel.elf
     boot
 }
@@ -380,8 +380,8 @@ menuentry "Turk-OS" {
 mkdir -p build/iso/boot/grub
 cp build/kernel.elf build/iso/boot/
 cp boot/grub.cfg build/iso/boot/grub/
-grub2-mkrescue -o build/turkos.iso build/iso
-qemu-system-i386 -cdrom build/turkos.iso -monitor stdio
+grub2-mkrescue -o build/kagan.iso build/iso
+qemu-system-i386 -cdrom build/kagan.iso -monitor stdio
 \end{lst}
 \verify{Same result as Task~1.4: \code{EAX=cafebabe}. The kernel now boots exactly as on a real PC.}
 
@@ -411,7 +411,7 @@ iso: $(BUILD)/kernel.elf boot/grub.cfg
 	mkdir -p $(BUILD)/iso/boot/grub
 	cp $< $(BUILD)/iso/boot/kernel.elf
 	cp boot/grub.cfg $(BUILD)/iso/boot/grub/
-	grub2-mkrescue -o $(BUILD)/turkos.iso $(BUILD)/iso
+	grub2-mkrescue -o $(BUILD)/kagan.iso $(BUILD)/iso
 
 debug: $(BUILD)/kernel.elf
 	qemu-system-i386 -kernel $< -s -S &
@@ -447,7 +447,7 @@ The C test crashes after calling \code{sum_array} & A callee-saved register (EBX
 \begin{milestonebox}[The kernel boots]
 \begin{checklist}
   \item \code{max} and \code{sum_array} in NASM pass their C tests and have been stepped through in GDB.
-  \item The boot sector prints ``Merhaba, Turk-OS!'' in QEMU and is exactly 512 bytes.
+  \item The boot sector prints ``Merhaba, Kagan!'' in QEMU and is exactly 512 bytes.
   \item \code{kernel.elf} boots with \code{make run} and with the GRUB ISO; \code{EAX=0xCAFEBABE} in both.
   \item \code{make debug} stops at \code{loader} and single-stepping works.
   \item The cdecl stack frame for a two-argument call is documented in the engineering journal.

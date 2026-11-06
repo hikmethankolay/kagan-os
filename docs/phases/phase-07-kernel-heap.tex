@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 \phaseheader{7}{Kernel Heap and Core Data Structures}{Give the kernel malloc and free, a reusable linked list, and an automated test run that guards every earlier phase}{42}{48}
@@ -19,7 +19,7 @@ cuts pages into objects of any size.
 
 An allocator is also representative of the code that fills a kernel: pointer
 arithmetic, invariants that must hold after every operation, and bugs that show up far from where they were made.
-That is why this phase also builds the automated test run. From now on, one command boots Turk-OS without a window,
+That is why this phase also builds the automated test run. From now on, one command boots Kagan without a window,
 runs every test, and reports in seconds whether today's change broke something from three phases ago.
 
 \section{Background}
@@ -65,7 +65,7 @@ chosen block is much larger than needed, it \textbf{splits} it. When a block is 
 Real kernels usually combine several allocators, and \OSC\,\S10.8 describes the two classic ones. The \textbf{buddy
 system} manages power-of-two blocks that can split in half and merge back cheaply. \textbf{Slab allocation} keeps a
 cache of ready-made objects of one type (say, every \code{struct task}), which avoids fragmentation and
-re-initialisation. Turk-OS uses a simple layered scheme that is easy to get right and easy to replace later. Whole
+re-initialisation. Kagan uses a simple layered scheme that is easy to get right and easy to replace later. Whole
 pages come straight from the PMM through the direct map: \code{kalloc_page()} is just \code{P2V(pmm_alloc_frame())},
 and it provides page-aligned memory for page tables and similar structures. Everything smaller comes from the heap,
 a first-fit list in the virtual region \code{0xE0000000}--\code{0xEFFFFFFF} that grows by mapping new frames as needed.
@@ -99,17 +99,17 @@ the port. A Makefile target turns that into an ordinary pass or fail, suitable a
 \must & \LKD & Ch.~12, \emph{kmalloc()}, \emph{vmalloc()}, \emph{Slab Layer} & 238--251 & The design behind Task~7.8's slab caches. \\
 \should & \LKP & Ch.~8, \emph{Understanding and using the kernel slab allocator} & 411--442 & Object caching and the real \code{kmalloc} size classes. \\
 \could & \LKP & Ch.~9, \emph{Creating a custom slab cache} and \emph{Memory allocation in the kernel -- which APIs to use when} & 444--461, 477--482 & Choosing between page, slab and \code{vmalloc} allocations. \\
-\should & \LKD & Ch.~6, \emph{Linked Lists} & 85--96 & Linux's \code{list_head}, the model for the Turk-OS intrusive list. \\
+\should & \LKD & Ch.~6, \emph{Linked Lists} & 85--96 & Linux's \code{list_head}, the model for the Kagan intrusive list. \\
 \end{readingplan}
 
 \begin{minixbox}
 The MINIX 3 kernel has no heap at all. Every table has a fixed size chosen at compile time: the process table is the
 array \code{proc[NR_TASKS + NR_PROCS]} declared in \texttt{kernel/proc.h (05500)}, and \texttt{kernel/table.c
 (06000)} holds other static tables. That makes memory use predictable and removes a whole class of allocator bugs, at
-the price of hard limits on processes, open files and so on. Turk-OS takes the other road, but fixed tables remain an
+the price of hard limits on processes, open files and so on. Kagan takes the other road, but fixed tables remain an
 option for some objects; the process table is the natural candidate to weigh.
 
-\par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux's \code{kmalloc} has no general free list. It rounds every request up to one of a set of slab caches (\code{kmalloc-8} up to a few pages), takes larger requests straight from the page allocator, and uses \code{vmalloc} for large areas that only need to be virtually contiguous. Task~7.8 moves the Turk-OS first-fit heap to the same design.
+\par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux's \code{kmalloc} has no general free list. It rounds every request up to one of a set of slab caches (\code{kmalloc-8} up to a few pages), takes larger requests straight from the page allocator, and uses \code{vmalloc} for large areas that only need to be virtually contiguous. Task~7.8 moves the Kagan first-fit heap to the same design.
 \end{minixbox}
 
 \section{Implementation}
@@ -439,7 +439,7 @@ Interrupt handlers should use memory allocated in advance.
   \item How does \code{kfree(p)} know how big the block is?
   \item What is coalescing, when does it happen, and what goes wrong without it?
   \item First fit or best fit: which fragments memory faster, and which searches faster?
-  \item Why can't \code{kmalloc} hand out whole pages for page tables? What does Turk-OS use instead?
+  \item Why can't \code{kmalloc} hand out whole pages for page tables? What does Kagan use instead?
   \item How does a slab allocator reduce both fragmentation and initialisation cost?
   \item What exactly does \code{container_of} compute? Write it out for a \code{struct task} whose list node is at offset 24.
 \end{enumerate}

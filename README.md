@@ -1,15 +1,15 @@
 <div align="center">
 
-<img src="docs/assets/banner.svg" alt="Turk-OS: a UNIX-like operating system for x86, RISC-V and ARM" width="100%"/>
+<img src="docs/assets/banner.svg" alt="Kagan: a UNIX-like operating system for x86, RISC-V and ARM" width="100%"/>
 
 <br/>
 
-[![License: MIT](https://img.shields.io/github/license/hikmethankolay/Turk-OS?style=flat-square&color=1B2A4A)](LICENSE)
+[![License: MIT](https://img.shields.io/github/license/hikmethankolay/kagan-os?style=flat-square&color=1B2A4A)](LICENSE)
 [![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-C8102E?style=flat-square)](#project-status)
 [![Platforms](https://img.shields.io/badge/platforms-i386%20%7C%20RV32%20%7C%20AArch64-1B2A4A?style=flat-square)](#supported-platforms)
 [![Language](https://img.shields.io/badge/language-C11%20%2B%20NASM-1F4E9C?style=flat-square)](#coding-conventions)
 [![Design docs](https://img.shields.io/badge/design%20docs-19%20phases-5F6B7A?style=flat-square)](docs/README.md)
-[![Last commit](https://img.shields.io/github/last-commit/hikmethankolay/Turk-OS?style=flat-square&color=5F6B7A)](https://github.com/hikmethankolay/Turk-OS/commits/main)
+[![Last commit](https://img.shields.io/github/last-commit/hikmethankolay/kagan-os?style=flat-square&color=5F6B7A)](https://github.com/hikmethankolay/kagan-os/commits/main)
 
 **A monolithic, UNIX-like kernel and userland written from scratch in C and assembly,
 targeting 32-bit x86 first and RISC-V and AArch64 after.**
@@ -22,7 +22,7 @@ targeting 32-bit x86 first and RISC-V and AArch64 after.**
 
 ## Overview
 
-Turk-OS is a small UNIX-like operating system. It boots through GRUB, runs preemptive multitasking with a separate
+Kagan is a small UNIX-like operating system. It boots through GRUB, runs preemptive multitasking with a separate
 address space per process, loads ELF programs from its own on-disk file system, and provides a POSIX-flavoured system
 call interface, a C library and a shell with pipes, redirection and job control. Every part of it, from the boot
 stub to the shell, is written for this project; nothing is taken from an existing kernel.
@@ -45,7 +45,7 @@ architecture interface and runs the same kernel, C library and file-system image
 ## Project status
 
 > [!NOTE]
-> Turk-OS is in **pre-alpha**. The design, the full development plan and the build environment are in place; the
+> Kagan is in **pre-alpha**. The design, the full development plan and the build environment are in place; the
 > kernel is being implemented phase by phase and does not boot yet. Expect the tree to fill in quickly.
 
 <!-- Keep this block in sync with the roadmap table below. -->
@@ -92,25 +92,25 @@ Planned for `v1.0`, with the phase that delivers each part.
 | **User mode** | Ring 3 with one page directory per process, a validating ELF loader, checked user-memory access, stack protector | 10 |
 | **Process model** | `fork` with copy-on-write, `execve` with `argv`/`envp`, `waitpid`, zombies and reparenting, lazy `brk`, growable stacks, signals, `init` as PID 1 | 11 |
 | **Storage** | ATA PIO driver (polled and interrupt-driven), block layer, validated MBR partitions, RAM disk, write-back buffer cache with LRU | 12 |
-| **File systems** | VFS with mount points, 64 descriptors per process with close-on-exec, ustar root archive, `devfs`, and **TurkFS**, a writable MINIX V3 file system that rejects corrupted images | 13 |
-| **Userland** | Turk-libc (`errno`, strings, `malloc`, buffered `stdio`), pipes, a terminal line discipline, resource limits | 14 |
-| **Shell and utilities** | `tsh` with pipelines, redirection, background jobs, quoting and `PATH` lookup; `ls`, `cat`, `cp`, `mv`, `rm`, `mkdir`, `ps`, `kill`, `wc`, `hexdump` and more | 14 |
+| **File systems** | VFS with mount points, 64 descriptors per process with close-on-exec, ustar root archive, `devfs`, and **KaganFS**, a writable MINIX V3 file system that rejects corrupted images | 13 |
+| **Userland** | Kagan libc (`errno`, strings, `malloc`, buffered `stdio`), pipes, a terminal line discipline, resource limits | 14 |
+| **Shell and utilities** | `kash` with pipelines, redirection, background jobs, quoting and `PATH` lookup; `ls`, `cat`, `cp`, `mv`, `rm`, `mkdir`, `ps`, `kill`, `wc`, `hexdump` and more | 14 |
 | **Security** | Users and groups, file and device permissions, sessions and terminal ownership, `login`; see [Security model](#security-model) | 10–15 |
 | **Release engineering** | Benchmark suite, `make release`, reproducible builds checked by hash, `SHA256SUMS`, signed tags | 15 |
 
 ```text
-turk@os:/$ echo merhaba | wc -c
+kagan@os:/$ echo merhaba | wc -c
 8
-turk@os:/$ ls /bin > /mnt/list.txt
-turk@os:/$ cat < /mnt/list.txt
+kagan@os:/$ ls /bin > /mnt/list.txt
+kagan@os:/$ cat < /mnt/list.txt
 ...
-turk@os:/$ sleep 5 &
-turk@os:/$
+kagan@os:/$ sleep 5 &
+kagan@os:/$
 ```
 
 ## Supported platforms
 
-All three targets run the same generic kernel, the same Turk-libc and the same TurkFS image. Real hardware is
+All three targets run the same generic kernel, the same Kagan libc and the same KaganFS image. Real hardware is
 supported after the emulated target works.
 
 | | **i386** (`v1.0`) | **RV32** (`v2.0`) | **AArch64** (`v2.0`) |
@@ -132,7 +132,7 @@ supported after the emulated target works.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.svg">
-  <img src="docs/assets/architecture.svg" alt="Six layers of Turk-OS: user space in ring 3; the system call boundary, highlighted, where every user pointer passes through uaccess.c; kernel services such as processes, memory, the VFS and locks; drivers; the architecture layer; and the hardware." width="100%">
+  <img src="docs/assets/architecture.svg" alt="Six layers of Kagan: user space in ring 3; the system call boundary, highlighted, where every user pointer passes through uaccess.c; kernel services such as processes, memory, the VFS and locks; drivers; the architecture layer; and the hardware." width="100%">
 </picture>
 
 The kernel is monolithic: drivers, the file system and the scheduler run in ring 0 and call each other directly.
@@ -187,7 +187,7 @@ marks copy-on-write pages, and `CR0.WP` makes the kernel obey read-only user pag
 ### System call interface
 
 The call number goes in `EAX` and up to three arguments in `EBX`, `ECX` and `EDX`; `int 0x80` enters the kernel
-through a DPL-3 trap gate. Results come back in `EAX`, errors as a negative `errno` that Turk-libc converts to `-1`
+through a DPL-3 trap gate. Results come back in `EAX`, errors as a negative `errno` that Kagan libc converts to `-1`
 plus `errno`. Every user pointer is copied through `copy_from_user`/`copy_to_user`, which check the range, the
 page permissions and copy-on-write state before touching memory.
 
@@ -221,9 +221,9 @@ validation contract of each call is `docs/security/syscalls.md`.
 
 </details>
 
-### TurkFS on-disk format
+### KaganFS on-disk format
 
-TurkFS is the MINIX V3 file system with 1 KiB blocks, byte-compatible with Linux's `mkfs.minix -3`.
+KaganFS is the MINIX V3 file system with 1 KiB blocks, byte-compatible with Linux's `mkfs.minix -3`.
 
 | Block(s) on an 8 MiB image | Region |
 |---|---|
@@ -263,7 +263,7 @@ boundaries and the residual risks.
 
 ## Building
 
-Turk-OS builds on **Linux, macOS and Windows (WSL2)** with a GCC cross compiler for `i686-elf`, NASM, QEMU, GDB and
+Kagan builds on **Linux, macOS and Windows (WSL2)** with a GCC cross compiler for `i686-elf`, NASM, QEMU, GDB and
 GRUB. The complete guide, including editor setup, troubleshooting and the toolchains for the ports, is
 **[docs/setup.md](docs/setup.md)**.
 
@@ -338,7 +338,7 @@ wsl --install -d Ubuntu
 wsl --update
 ```
 
-Then follow the Ubuntu steps inside WSL and keep the repository in the Linux file system (`~/Turk-OS`), not under
+Then follow the Ubuntu steps inside WSL and keep the repository in the Linux file system (`~/kagan-os`), not under
 `/mnt/c`. See the [WSL2 notes](docs/setup.md#windows-wsl2).
 
 </details>
@@ -381,7 +381,7 @@ echo 'export PATH="$HOME/opt/cross/bin:$PATH"' >> ~/.bashrc
 ```sh
 i686-elf-gcc --version          # i686-elf-gcc (GCC) 16.2.0
 nasm -v && qemu-system-i386 --version && gdb --version
-git clone https://github.com/hikmethankolay/Turk-OS.git && cd Turk-OS
+git clone https://github.com/hikmethankolay/kagan-os.git && cd kagan-os
 make run                        # from Phase 1
 ```
 
@@ -392,12 +392,12 @@ make run                        # from Phase 1
 |---|---|:---:|
 | `make` | Builds `build/kernel.elf` | Phase 1 |
 | `make run` | Boots the kernel in QEMU with the serial console on your terminal | Phase 1 |
-| `make iso` | Builds a bootable `build/turkos.iso` with GRUB | Phase 1 |
+| `make iso` | Builds a bootable `build/kagan.iso` with GRUB | Phase 1 |
 | `make debug` | Starts QEMU halted with its GDB stub and attaches GDB | Phase 1 |
 | `make clean` | Removes `build/` | Phase 1 |
 | `make test` | Boots a headless QEMU, runs every in-kernel test and fails on any failure | Phase 7 |
 | `make test UBSAN=1` | The same, with a kernel that traps on undefined behaviour | Phase 7 |
-| `make release` | Kernel, userland, root archive, TurkFS image and ISO | Phase 15 |
+| `make release` | Kernel, userland, root archive, KaganFS image and ISO | Phase 15 |
 | `make ARCH=riscv32 …` / `ARCH=aarch64` | Any target above for another architecture (`i386` is the default) | Phase 16 |
 | `make check-generic` | Compiles the generic kernel for every architecture to catch non-portable code | Phase 16 |
 | `make -C docs` | Builds the design documents (PDF) | now |
@@ -413,7 +413,7 @@ the toolchains for the ports are in [section 9](docs/setup.md#9-toolchains-for-t
 
 ```sh
 qemu-system-i386 -kernel build/kernel.elf -serial stdio          # quick boot via QEMU's Multiboot loader
-qemu-system-i386 -cdrom build/turkos.iso -serial stdio           # full BIOS → GRUB → kernel boot
+qemu-system-i386 -cdrom build/kagan.iso -serial stdio           # full BIOS → GRUB → kernel boot
 ```
 
 <details>
@@ -426,21 +426,21 @@ qemu-system-i386 -kernel build/kernel.elf -serial file:build/serial.log -m 128
 # User programs as Multiboot modules
 qemu-system-i386 -kernel build/kernel.elf -serial stdio -initrd "build/user/hello.elf,build/user/evil.elf"
 
-# Scratch disk on the primary master, TurkFS on the primary slave
+# Scratch disk on the primary master, KaganFS on the primary slave
 qemu-img create -f raw build/disk.img 64M
-dd if=/dev/zero of=build/turkfs.img bs=1024 count=32768 && mkfs.minix -3 build/turkfs.img
+dd if=/dev/zero of=build/kaganfs.img bs=1024 count=32768 && mkfs.minix -3 build/kaganfs.img
 qemu-system-i386 -kernel build/kernel.elf -serial stdio \
     -drive file=build/disk.img,format=raw,if=ide,index=0,media=disk \
-    -drive file=build/turkfs.img,format=raw,if=ide,index=1,media=disk
+    -drive file=build/kaganfs.img,format=raw,if=ide,index=1,media=disk
 
-# RISC-V and AArch64 (v2.0), TurkFS on virtio-blk
+# RISC-V and AArch64 (v2.0), KaganFS on virtio-blk
 qemu-system-riscv32 -machine virt -bios default -m 128M -nographic \
     -kernel build/riscv32/kernel.elf -global virtio-mmio.force-legacy=false \
-    -drive if=none,format=raw,file=build/riscv32/turkfs.img,id=hd0 \
+    -drive if=none,format=raw,file=build/riscv32/kaganfs.img,id=hd0 \
     -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.0
 qemu-system-aarch64 -machine virt,gic-version=2 -cpu cortex-a72 -m 128M -nographic \
     -kernel build/aarch64/kernel8.img -global virtio-mmio.force-legacy=false \
-    -drive if=none,format=raw,file=build/aarch64/turkfs.img,id=hd0 -device virtio-blk-device,drive=hd0
+    -drive if=none,format=raw,file=build/aarch64/kaganfs.img,id=hd0 -device virtio-blk-device,drive=hd0
 ```
 
 With `-nographic`, press Ctrl+A then X to quit.
@@ -467,9 +467,9 @@ With `-nographic`, press Ctrl+A then X to quit.
 | Failure injection | Forced allocation failures; every caller must return an error | 7 |
 | Stress | Heap churn, 1000 task and fork cycles without leaks, classic concurrency problems with lock checking | 7–11 |
 | Negative tests | "Evil programs" that misbehave on purpose: bad and kernel pointers, malformed ELF files, stack smashing, writes to read-only pages | 10, 11 |
-| Fuzzing | Seeded, replayable system call fuzzer; libFuzzer targets for the ELF, TurkFS and tar parsers | 10–15 |
-| File-system checks | `fsck.minix` on images written by Turk-OS, including after an unclean shutdown | 13 |
-| Shell tests | `tsh -c` command lines compared with expected output | 14 |
+| Fuzzing | Seeded, replayable system call fuzzer; libFuzzer targets for the ELF, KaganFS and tar parsers | 10–15 |
+| File-system checks | `fsck.minix` on images written by Kagan, including after an unclean shutdown | 13 |
+| Shell tests | `kash -c` command lines compared with expected output | 14 |
 | Cross-architecture | `make check-generic`, devicetree parser tests, and the full suite on RISC-V and AArch64 | 16–18 |
 
 ---
@@ -499,8 +499,8 @@ subsystem, its implementation tasks with acceptance checks, and the exit criteri
 | 10 | User mode | Ring 3, system calls, checked user access, ELF loader, threat model | [PDF](docs/pdf/phase-10-user-mode-syscalls.pdf) | ⬜ |
 | 11 | Process API | `fork`/COW, `exec`, `wait`, `brk`, signals, system call fuzzer | [PDF](docs/pdf/phase-11-process-api.pdf) | ⬜ |
 | 12 | Storage | ATA driver, block layer, partitions, buffer cache | [PDF](docs/pdf/phase-12-storage-drivers.pdf) | ⬜ |
-| 13 | File systems | VFS, descriptors, tar root, writable TurkFS, parser fuzzing | [PDF](docs/pdf/phase-13-file-systems.pdf) | ⬜ |
-| 14 | Userland | Turk-libc, pipes, terminal, `tsh`, core utilities, resource limits | [PDF](docs/pdf/phase-14-userland-shell.pdf) | ⬜ |
+| 13 | File systems | VFS, descriptors, tar root, writable KaganFS, parser fuzzing | [PDF](docs/pdf/phase-13-file-systems.pdf) | ⬜ |
+| 14 | Userland | Kagan libc, pipes, terminal, `kash`, core utilities, resource limits | [PDF](docs/pdf/phase-14-userland-shell.pdf) | ⬜ |
 | 15 | Hardening and `v1.0` | Final audit, permissions and sessions, benchmarks, reproducible signed release | [PDF](docs/pdf/phase-15-hardening-release.pdf) | ⬜ |
 | 16 | Portability layer | `include/arch.h`, boot information, devicetree parser, 64-bit-clean generic code | [PDF](docs/pdf/phase-16-portability-layer.pdf) | ⬜ |
 | 17 | RISC-V port | RV32 on QEMU `virt`: OpenSBI, Sv32, PLIC, virtio-blk | [PDF](docs/pdf/phase-17-riscv-port.pdf) | ⬜ |
@@ -522,12 +522,12 @@ subsystem, its implementation tasks with acceptance checks, and the exit criteri
 - **P10** — Ring-3 program prints through `write`; malicious programs are killed or get errors while the kernel survives; malformed ELF files are rejected; every system call has a validation contract.
 - **P11** — `fork`/`exec`/`wait` works; copy-on-write verified, also through `copy_to_user`; no leaks over 1000 forks; ten minutes of fuzzing without a panic.
 - **P12** — Disk identified; data survives reboot; partitions detected and corrupted tables rejected; buffer cache in use.
-- **P13** — Images written by Turk-OS pass `fsck.minix`; descriptor semantics tested; corrupted images rejected; parsers survive an hour of fuzzing.
-- **P14** — Boots to the `tsh` prompt; pipes, redirection and Ctrl+C work; utilities present; resource limits enforced.
+- **P13** — Images written by Kagan pass `fsck.minix`; descriptor semantics tested; corrupted images rejected; parsers survive an hour of fuzzing.
+- **P14** — Boots to the `kash` prompt; pipes, redirection and Ctrl+C work; utilities present; resource limits enforced.
 - **P15** — One hour of fuzzing as an unprivileged user without a panic; permission and session tests pass; two clean builds match; `v1.0` tagged and signed.
 - **P16** — Generic code free of x86; `make ARCH=i386 test` passes; generic code compiles for riscv32 and aarch64 without warnings; devicetree parser passes its tests.
-- **P17** — RISC-V `virt` boots to `tsh`; `make ARCH=riscv32 test` passes, negative tests included; W^X holds; TurkFS images interoperate.
-- **P18** — AArch64 `virt` boots to `tsh`; `make ARCH=aarch64 test` passes, negative tests included; W^X holds; one TurkFS image works on all three; `v2.0` tagged.
+- **P17** — RISC-V `virt` boots to `kash`; `make ARCH=riscv32 test` passes, negative tests included; W^X holds; KaganFS images interoperate.
+- **P18** — AArch64 `virt` boots to `kash`; `make ARCH=aarch64 test` passes, negative tests included; W^X holds; one KaganFS image works on all three; `v2.0` tagged.
 
 </details>
 
@@ -574,19 +574,19 @@ The design follows the standard operating-systems literature and compares every 
 ## Repository layout
 
 ```text
-Turk-OS/
+kagan-os/
 ├── boot/                 Multiboot entry (loader.s), grub.cfg
 ├── kernel/
 │   ├── arch/             i386 · riscv32 · aarch64 backends behind include/arch.h
 │   ├── mm/               physical and virtual memory, heap, fault handling
 │   ├── proc/             tasks, scheduler, fork/exec, signals
 │   ├── sync/             spinlocks, mutexes, semaphores, wait queues
-│   ├── fs/               VFS, tarfs, TurkFS, devfs, pipes
+│   ├── fs/               VFS, tarfs, KaganFS, devfs, pipes
 │   ├── drivers/          consoles, keyboard, timer, tty, ATA, block layer, virtio
 │   └── syscall/          system call dispatch and uaccess.c
 ├── lib/                  freestanding support library (strings, printf, bitmaps, FDT parser)
 ├── include/              kernel headers, including the lock order and the arch interface
-├── user/                 Turk-libc, init, tsh, utilities, negative tests, fuzzer
+├── user/                 Kagan libc, init, kash, utilities, negative tests, fuzzer
 ├── tests/                host unit tests, fuzz targets, test data
 ├── tools/                host-side helpers
 └── docs/                 design documents (LaTeX + PDF), setup guide, security docs, diagrams
@@ -600,7 +600,7 @@ architecture from `v2.0`) and stays out of Git.
 ## Contributing
 
 Issues and suggestions are welcome, whether a bug in the code or a mistake in a design document. Please open an
-[issue](https://github.com/hikmethankolay/Turk-OS/issues) before a large change so the design can be discussed
+[issue](https://github.com/hikmethankolay/kagan-os/issues) before a large change so the design can be discussed
 against the roadmap.
 
 ### Coding conventions
@@ -633,10 +633,10 @@ bug gets a regression test; releases are signed tags.
 ## Reporting security issues
 
 Please report vulnerabilities privately through GitHub's
-[private vulnerability reporting](https://github.com/hikmethankolay/Turk-OS/security/advisories/new) rather than a
+[private vulnerability reporting](https://github.com/hikmethankolay/kagan-os/security/advisories/new) rather than a
 public issue. Each confirmed issue is fixed together with a regression test.
 
 ## License
 
-Turk-OS is released under the [MIT License](LICENSE). Copyright © 2026 Hikmethan KOLAY. The license covers the
+Kagan is released under the [MIT License](LICENSE). Copyright © 2026 Hikmethan KOLAY. The license covers the
 source code and the documentation in `docs/`.

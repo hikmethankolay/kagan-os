@@ -1,19 +1,19 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
-\phaseheader{17}{The RISC-V Port}{Boot the same kernel and userland on a second architecture: QEMU's RISC-V virt board, with OpenSBI as the firmware and Turk-OS in supervisor mode}{20}{60}
+\phaseheader{17}{The RISC-V Port}{Boot the same kernel and userland on a second architecture: QEMU's RISC-V virt board, with OpenSBI as the firmware and Kagan in supervisor mode}{20}{60}
 
 \ataglance{5--6 weeks (Task 17.13 on your own core is open-ended)}{4}{Phase 16 complete: the portable core, both cross
-compilers, the FDT parser and its host tests}{Turk-OS on \code{qemu-system-riscv32 -machine virt}, booting to
-\code{tsh}: traps with a crash report that names every cause, the SBI timer at 100\,Hz, the PLIC with UART input, an
-Sv32 higher-half kernel at \code{0xC0000000}, user mode through \code{ecall}, a virtio-blk disk carrying TurkFS, and
+compilers, the FDT parser and its host tests}{Kagan on \code{qemu-system-riscv32 -machine virt}, booting to
+\code{kash}: traps with a crash report that names every cause, the SBI timer at 100\,Hz, the PLIC with UART input, an
+Sv32 higher-half kernel at \code{0xC0000000}, user mode through \code{ecall}, a virtio-blk disk carrying KaganFS, and
 \code{make ARCH=riscv32 test}. Optionally, a checked plan for running it on Timur-RV32IMC.}
 
 \section{Scope and motivation}
 
 Phase 16 claimed that everything outside \code{kernel/arch/i386} is generic. This phase tests the claim on a second
-machine: only the RISC-V half of \code{include/arch.h} is new, and the scheduler, the VFS, TurkFS, \code{fork} and the
+machine: only the RISC-V half of \code{include/arch.h} is new, and the scheduler, the VFS, KaganFS, \code{fork} and the
 whole userland are recompiled, not rewritten. Every place where that fails is a leak the audit of Task~16.2 missed; fix
 it in the generic code, note it in \code{docs/porting.md}, and keep \code{make ARCH=i386 test} passing.
 
@@ -41,7 +41,7 @@ registers.
 
 \subsection{Three privilege modes and the SBI}
 
-A RISC-V hart (hardware thread) runs in machine (M), supervisor (S) or user (U) mode. Turk-OS runs in S-mode,
+A RISC-V hart (hardware thread) runs in machine (M), supervisor (S) or user (U) mode. Kagan runs in S-mode,
 programs in U-mode. Unlike the BIOS and GRUB, the firmware, \textbf{OpenSBI}, stays resident in M-mode and offers
 services through the \textbf{Supervisor Binary Interface} (SBI), called with \code{ecall} one level down
 (Figure~\ref{fig:modes}).
@@ -51,14 +51,14 @@ services through the \textbf{Supervisor Binary Interface} (SBI), called with \co
 \begin{tikzpicture}[lay/.style={draw=tkNavy!60, rounded corners=2pt, minimum width=5.4cm, text width=5.2cm,
     minimum height=0.72cm, font=\sffamily\scriptsize, align=center, line width=0.6pt},
   arr/.style={-{Stealth[length=2mm]}, line width=0.7pt, draw=tkViolet}]
-  \node[font=\sffamily\small\bfseries, text=tkNavy] at (0,0.7) {Turk-OS 1.0 on x86};
-  \node[lay, fill=tkGreen!10] (xu) at (0,0) {ring 3: \code{tsh}, coreutils, Turk-libc};
-  \node[lay, fill=tkRed!8, below=0.5cm of xu] (xk) {ring 0: the Turk-OS kernel};
+  \node[font=\sffamily\small\bfseries, text=tkNavy] at (0,0.7) {Kagan 1.0 on x86};
+  \node[lay, fill=tkGreen!10] (xu) at (0,0) {ring 3: \code{kash}, coreutils, Kagan libc};
+  \node[lay, fill=tkRed!8, below=0.5cm of xu] (xk) {ring 0: the Kagan kernel};
   \node[lay, fill=tkGray!12, below=0.5cm of xk] (xf) {BIOS and GRUB: load the kernel, then gone};
   \node[lay, fill=tkGray!20, below=0.5cm of xf] (xh) {PC hardware};
-  \node[font=\sffamily\small\bfseries, text=tkViolet] at (7.6,0.7) {Turk-OS on RISC-V \code{virt}};
+  \node[font=\sffamily\small\bfseries, text=tkViolet] at (7.6,0.7) {Kagan on RISC-V \code{virt}};
   \node[lay, fill=tkGreen!10] (ru) at (7.6,0) {U-mode: the same programs, rebuilt};
-  \node[lay, fill=tkRed!8, below=0.5cm of ru] (rk) {S-mode: the Turk-OS kernel};
+  \node[lay, fill=tkRed!8, below=0.5cm of ru] (rk) {S-mode: the Kagan kernel};
   \node[lay, fill=tkViolet!12, draw=tkViolet, below=0.5cm of rk] (rf) {M-mode: OpenSBI, stays resident};
   \node[lay, fill=tkGray!20, below=0.5cm of rf] (rh) {hart, ACLINT timer, PLIC, 16550, virtio-mmio};
   \draw[arr] ([xshift=1.2cm]ru.south) -- node[right, font=\sffamily\scriptsize, text=tkViolet] {\code{ecall}: system call} ([xshift=1.2cm]rk.north);
@@ -73,7 +73,7 @@ services through the \textbf{Supervisor Binary Interface} (SBI), called with \co
 
 An SBI call puts the extension ID (EID) in \code{a7}, the function ID (FID) in \code{a6} and arguments in
 \code{a0}--\code{a5}, and returns an error code in \code{a0} and a value in \code{a1}; other registers are preserved.
-Turk-OS uses Base (EID \code{0x10}, to probe), Timer (\code{0x54494D45}, ``TIME''), System Reset (\code{0x53525354},
+Kagan uses Base (EID \code{0x10}, to probe), Timer (\code{0x54494D45}, ``TIME''), System Reset (\code{0x53525354},
 ``SRST'') and Debug Console (\code{0x4442434E}, ``DBCN''), with the legacy putchar (EID \code{0x01}) as a fallback.
 OpenSBI v1.7, QEMU 10.2's \code{-bios default}, lists all four in its banner.
 
@@ -180,7 +180,7 @@ entries, VPN[1] selects one, VPN[0] an entry of the second-level table. A root e
 The entries differ more (Table~\ref{tab:pte}). V (valid) replaces P; an entry with R, W and X all zero points to
 the next table, any other is a \textbf{leaf}; every page has an execute bit. And a core may raise a page fault instead
 of setting the \textbf{A} and \textbf{D} bits. QEMU sets them, so the bug hides there, but a simple core, such as
-Timur-RV32IMC, may not. Turk-OS never reads them, so it sets both in every leaf, as the specification recommends.
+Timur-RV32IMC, may not. Kagan never reads them, so it sets both in every leaf, as the specification recommends.
 
 \begin{table}[htbp]
 \centering\small\renewcommand{\arraystretch}{1.15}
@@ -193,7 +193,7 @@ Table or page? & PS bit in a PDE (4\,MiB page) & leaf if any of R, W, X is set \
 Permissions & R/W bit 1; no execute bit & R, W, X bits 1--3; W needs R \\
 User access & U/S bit 2, in PDE \emph{and} PTE & U bit 4, in the leaf; S-mode needs \code{sstatus}.SUM to touch it \\
 Accessed, dirty & A bit 5, D bit 6, set by the CPU & A bit 6, D bit 7; may fault instead \\
-Free for the OS & bits 9--11 & RSW, bits 8--9 (Turk-OS: bit 8 = COW) \\
+Free for the OS & bits 9--11 & RSW, bits 8--9 (Kagan: bit 8 = COW) \\
 Frame number & bits 31:12, 32-bit physical & bits 31:10, 34-bit physical \\
 Flush one page & \code{invlpg} & \code{sfence.vma va, zero} \\
 \bottomrule
@@ -258,10 +258,10 @@ calling convention and the ELF flags of Task~17.11.
 \begin{minixbox}[Prior art: how xv6-riscv does it]
 xv6 runs on the same board. It has no firmware: it boots with \code{-bios none}, \code{kernel/entry.S} starts in
 M-mode, and \code{start.c} delegates all traps to S-mode, opens the PMP, enables Sstc for the timer and \code{mret}s
-into \code{main}; Turk-OS never touches an M-mode CSR. It is RV64 with Sv39, so \code{walk()} in \code{vm.c}
-descends three levels to Turk-OS's two. Its kernel has its own page table, so \code{trampoline.S} switches \code{satp} on
-every trap; Turk-OS maps the kernel everywhere and needs no trampoline. The rest maps one to one: \code{kernelvec.S}
-and \code{trap.c} correspond to Turk-OS's \code{entry.S} and \code{trap.c}, \code{plic.c} is a dozen lines, \code{uart.c} drives a
+into \code{main}; Kagan never touches an M-mode CSR. It is RV64 with Sv39, so \code{walk()} in \code{vm.c}
+descends three levels to Kagan's two. Its kernel has its own page table, so \code{trampoline.S} switches \code{satp} on
+every trap; Kagan maps the kernel everywhere and needs no trampoline. The rest maps one to one: \code{kernelvec.S}
+and \code{trap.c} correspond to Kagan's \code{entry.S} and \code{trap.c}, \code{plic.c} is a dozen lines, \code{uart.c} drives a
 16550, \code{swtch.S} saves \code{ra}, \code{sp} and \code{s0}--\code{s11} (in the process structure),
 \code{spinlock.c} compiles to \code{amoswap.w.aq}, and \code{virtio_disk.c} builds Task~17.10's three-descriptor request.
 \end{minixbox}
@@ -736,7 +736,7 @@ version 2:
 
 \begin{lst}{sh}{kernel/arch/riscv32/arch.mk (QEMU_FLAGS, continued)}
 -global virtio-mmio.force-legacy=false \
--drive file=$(BUILD)/turkfs.img,if=none,format=raw,id=hd0 \
+-drive file=$(BUILD)/kaganfs.img,if=none,format=raw,id=hd0 \
 -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.0       # slot 0x10001000, IRQ 1
 \end{lst}
 
@@ -785,7 +785,7 @@ reserved; uint64\_t sector; \}} (type 0 read, 1 write; NEXT), the buffer (NEXT, 
 byte (WRITE; 0 = OK). Post the head in the available ring, fence (\code{__sync_synchronize()}), bump its \code{idx},
 fence, write 0 to \code{QueueNotify}, and sleep. The handler (PLIC source 1) acknowledges \code{InterruptStatus}, walks
 the used ring and wakes the waiter. Sectors are 512 bytes. Register \code{vda} through Task~12.5's
-\code{struct blockdev}, and the buffer cache and TurkFS sit on top unchanged.
+\code{struct blockdev}, and the buffer cache and KaganFS sit on top unchanged.
 
 The used ring is written by the device, so treat its \code{id} like any other outside input: check it against
 \code{QSIZE} before using it as an index into the request table, and log and skip an entry that is out of range. A
@@ -817,7 +817,7 @@ that are not adjacent in RAM, and the device writes half of it over someone else
 \code{hexdump -C -s $((100*512)) -n 64 build/riscv32/disk.img}.}
 
 \task{Userland for RV32}
-Turk-libc and the utilities do not change. The system call stub sets \code{a7} and \code{a0}--\code{a5}, executes
+Kagan libc and the utilities do not change. The system call stub sets \code{a7} and \code{a0}--\code{a5}, executes
 \code{ecall} and returns \code{a0}, with register variables like \code{sbi_call}; \code{user.ld} still starts at
 \code{0x00400000}; and \code{crt0.S} reads the System V stack of Task~11.6:
 
@@ -838,8 +838,8 @@ _start:                             // sp -> argc, argv[], NULL, envp[], NULL
 Build with the kernel's \code{-march}/\code{-mabi}, \code{-nostdlib -static} and \code{-lgcc} (RV32 has no 64-bit
 divide; GCC calls \code{__udivdi3}). The ELF loader expects \code{EM_RISCV} (243), \code{ELFCLASS32}, little-endian,
 and \code{e_flags & 0x0006} = 0 (soft float: the kernel saves no FPU registers); bit \code{0x0001} (compressed) is fine.
-Rebuild the root archive (Task~13.4) and the TurkFS image, and pass the archive with \code{-initrd}.
-\verify{\code{make ARCH=riscv32 run} boots to \code{turk@os:/$}; \code{ls /bin}, \code{echo merhaba | cat}, a
+Rebuild the root archive (Task~13.4) and the KaganFS image, and pass the archive with \code{-initrd}.
+\verify{\code{make ARCH=riscv32 run} boots to \code{kagan@os:/$}; \code{ls /bin}, \code{echo merhaba | cat}, a
 redirection and Ctrl+C on \code{cat} behave as on x86; an i386 ELF fails \code{execve} with \code{-ENOEXEC}.}
 
 \task{make test on RISC-V}
@@ -855,7 +855,7 @@ absolute times.
 status 1, \code{make ARCH=i386 test} still passes, the CI matrix is green for \code{riscv32}, and an hour of fuzzing
 ends without a panic.}
 
-\task{Optional: Turk-OS on Timur-RV32IMC}
+\task{Optional: Kagan on Timur-RV32IMC}
 This is a hardware bring-up target for the Timur-RV32IMC soft core. It starts once Timur passes its own tests and
 runs a bare-metal program on its UART. Check what the core offers, fill the gaps in firmware, and build a kernel that needs nothing more.
 
@@ -863,7 +863,7 @@ runs a bare-metal program on its UART. Check what the core offers, fill the gaps
 \small\renewcommand{\arraystretch}{1.15}
 \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.25\linewidth} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}p{0.33\linewidth}@{}}
 \toprule
-\tkth{Requirement} & \tkth{Why Turk-OS needs it} & \tkth{Workaround if missing} \\
+\tkth{Requirement} & \tkth{Why Kagan needs it} & \tkth{Workaround if missing} \\
 \midrule
 Zicsr; M, S, U modes; Sv32 with \code{sfence.vma} & traps; protection; address spaces, COW, the higher half & none \\
 Precise traps, \code{medeleg}/\code{mideleg} & faults restart the instruction; S-mode handles them & an M-mode handler forwarding to \code{stvec} \\
@@ -911,7 +911,7 @@ Corruption near \code{0x80000000} & OpenSBI's memory given out as free & Reserve
 
 \begin{milestonebox}[Merhaba, RISC-V]
 \begin{checklist}
-  \item \code{qemu-system-riscv32 -machine virt} boots Turk-OS on OpenSBI to the \code{tsh} prompt; input arrives by
+  \item \code{qemu-system-riscv32 -machine virt} boots Kagan on OpenSBI to the \code{kash} prompt; input arrives by
     UART interrupt.
   \item The kernel runs at \code{0xC0400000} under Sv32, and every device comes from the devicetree.
   \item Every exception gives a readable crash report, \code{ebreak} returns, and the evil programs are contained.
@@ -919,7 +919,7 @@ Corruption near \code{0x80000000} & OpenSBI's memory given out as free & Reserve
     write to kernel text and an execute from a user data page both fault; the virtio used-ring \code{id} is checked.
   \item \code{make ARCH=riscv32 test} passes, \code{make ARCH=i386 test} still passes, the evil programs and the
     fuzzer pass on RV32 in CI, and an hour of fuzzing ends without a panic.
-  \item A TurkFS image written by Turk-OS on RISC-V passes \code{fsck.minix -f} on the host.
+  \item A KaganFS image written by Kagan on RISC-V passes \code{fsck.minix -f} on the host.
   \item \code{docs/porting.md} records the board, every leak fixed, and the benchmarks beside x86.
   \item (Optional) The Timur-RV32IMC table is filled in, and the SBI shim boots the kernel in QEMU.
 \end{checklist}
@@ -931,8 +931,8 @@ Corruption near \code{0x80000000} & OpenSBI's memory given out as free & Reserve
   \item What does the hardware do on a trap, and what must \code{entry.S} do because the hardware doesn't?
   \item Why does \code{ecall} need \code{sepc += 4} while a page fault must leave \code{sepc} alone? And \code{ebreak}?
   \item How do an x86 PTE and an Sv32 PTE tell a table from a page, and ``absent'' from ``present but forbidden''?
-  \item What is \code{sstatus}.SUM for? Why does Turk-OS set A and D itself when QEMU would?
-  \item Why can an RV32IMC core without the A extension still run Turk-OS on one hart, and what breaks with two?
+  \item What is \code{sstatus}.SUM for? Why does Kagan set A and D itself when QEMU would?
+  \item Why can an RV32IMC core without the A extension still run Kagan on one hart, and what breaks with two?
 \end{enumerate}
 \end{questionbox}
 
@@ -940,7 +940,7 @@ Corruption near \code{0x80000000} & OpenSBI's memory given out as free & Reserve
 
 Port to \textbf{RV64} with Sv39, like xv6. Start more harts with the SBI \textbf{HSM} extension and make the scheduler
 SMP-safe. Use \textbf{Sstc} (\code{stimecmp}, which QEMU's hart has) to drop the SBI call from every tick. Add global
-kernel mappings and ASIDs. Or run Turk-OS on a real RV64 board, whose boot chain (U-Boot SPL, OpenSBI, U-Boot) is the
+kernel mappings and ASIDs. Or run Kagan on a real RV64 board, whose boot chain (U-Boot SPL, OpenSBI, U-Boot) is the
 one QEMU's \code{virt} imitates.
 
 \nextphase{18}{The ARM Port}

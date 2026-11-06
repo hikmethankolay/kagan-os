@@ -1,5 +1,5 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
 \phaseheader{9}{Synchronization and Concurrency in the Kernel}{Now that tasks can be interrupted anywhere, make shared data safe: interrupt control, spinlocks, wait queues, mutexes and semaphores}{56}{62}
@@ -53,12 +53,12 @@ one flow of control inside it at a time.
 \label{tab:race}
 \end{table}
 
-\subsection{Where concurrency comes from in Turk-OS}
+\subsection{Where concurrency comes from in Kagan}
 
 On a single CPU there are exactly two sources of interleaving: \textbf{interrupts}, which can run a handler between
 any two instructions of a task, and \textbf{preemption}, which the timer interrupt causes. So on one CPU,
 \textbf{disabling interrupts} around a critical section is a complete lock (\OSTEP\,\S28.5). It is cheap and simple,
-but it doesn't scale: with several CPUs, the other CPUs keep running. That is why Turk-OS wraps interrupt control in
+but it doesn't scale: with several CPUs, the other CPUs keep running. That is why Kagan wraps interrupt control in
 a real \textbf{spinlock} built on an atomic instruction from the start. On one CPU the spinning never happens, but the
 code is already correct for the SMP track in Phase 15.
 
@@ -127,7 +127,7 @@ a rendezvous with no buffering (\OSDI\,\S2.2.8 and \S2.6.9). \code{mini_send} an
 \texttt{kernel/proc.c (07400)} implement it, including a check that refuses a \code{send} which would close a cycle of processes
 sending to each other: deadlock detection built into the IPC primitive itself.
 
-\par\smallskip\textbf{Linux, for comparison.} \LKP Linux checks its lock order at run time: \textbf{lockdep} records which locks are held when another is taken and reports the first order violation, long before it deadlocks. It also replaced plain atomic counters for object lifetimes with \code{refcount_t}, which saturates instead of wrapping to zero. Tasks~9.8 and 9.9 bring both ideas to Turk-OS.
+\par\smallskip\textbf{Linux, for comparison.} \LKP Linux checks its lock order at run time: \textbf{lockdep} records which locks are held when another is taken and reports the first order violation, long before it deadlocks. It also replaced plain atomic counters for object lifetimes with \code{refcount_t}, which saturates instead of wrapping to zero. Tasks~9.8 and 9.9 bring both ideas to Kagan.
 \end{minixbox}
 
 \section{Implementation}
@@ -351,9 +351,9 @@ exactly once.}
 \task{Check the lock order at run time}
 The table above is only a promise until something checks it. Linux's \textbf{lockdep} (\LKP ch.~13) watches every
 acquisition and reports the first order violation, long before it turns into a deadlock that happens once a week.
-A much smaller version suffices for Turk-OS: give each lock a \textbf{rank} from the table, keep a small stack of the
+A much smaller version suffices for Kagan: give each lock a \textbf{rank} from the table, keep a small stack of the
 locks the CPU holds, and in debug builds panic when a lock is taken whose rank is not greater than the rank of the
-lock on top. Unlike lockdep, which learns the order from what it sees, the Turk-OS checker enforces the documented order.
+lock on top. Unlike lockdep, which learns the order from what it sees, the Kagan checker enforces the documented order.
 
 \begin{lst}{c}{kernel/sync/lockcheck.c (with LOCK_DEBUG)}
 static struct spinlock *held[16];

@@ -1,10 +1,10 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
-\phaseheader{15}{Hardening, Polish and Release: Turk-OS 1.0}{Make it survive hostile input, measure it, document it, ship it, and choose where to go next}{96}{100}
+\phaseheader{15}{Hardening, Polish and Release: Kagan 1.0}{Make it survive hostile input, measure it, document it, ship it, and choose where to go next}{96}{100}
 
-\ataglance{3--4 weeks for the core, then open-ended}{4}{Phases 0--14 complete: Turk-OS boots to a shell with pipes, files and processes}{A
+\ataglance{3--4 weeks for the core, then open-ended}{4}{Phases 0--14 complete: Kagan boots to a shell with pipes, files and processes}{A
 system call fuzzer that runs for an hour without a kernel panic, an audited user/kernel boundary, kernel stack
 protection and read-only kernel code, users, file and device permissions with sessions, a threat model with its
 residual risks, a benchmark suite with one measured optimisation, an architecture document, a reproducible
@@ -21,8 +21,8 @@ closing that gap.
 
 The release is also the point for a design review. \MOS chapter 12, written by an author who designed several operating
 systems, covers exactly the decisions made across Phases 0--14: interfaces, structure, mechanism versus policy,
-performance, and managing a large software project. The phase ends with a written comparison of Turk-OS against
-MINIX 3 and Linux, a list of optional extension tracks, and a look ahead to Stage V, which ports Turk-OS to RISC-V
+performance, and managing a large software project. The phase ends with a written comparison of Kagan against
+MINIX 3 and Linux, a list of optional extension tracks, and a look ahead to Stage V, which ports Kagan to RISC-V
 (including the project's own hardware core) and to ARM.
 
 \section{Background}
@@ -30,9 +30,9 @@ MINIX 3 and Linux, a list of optional extension tracks, and a look ahead to Stag
 \subsection{The kernel is the trusted computing base}
 
 \MOS\,\S9.2.2 defines the \textbf{trusted computing base} (TCB): the hardware and software that must be correct for
-the system's security to hold. In Turk-OS that is the entire kernel. Every system call is an entry point into the TCB
+the system's security to hold. In Kagan that is the entire kernel. Every system call is an entry point into the TCB
 controlled by a possibly hostile program, which is why Phase 10's rule (never trust a user pointer) was only the
-start. \MOS\,\S9.7 catalogues how kernels get broken, and several items apply directly to Turk-OS code:
+start. \MOS\,\S9.7 catalogues how kernels get broken, and several items apply directly to Kagan code:
 \textbf{buffer overflows} when a length from the user isn't checked; \textbf{integer overflows} when
 \code{offset + length} wraps around; \textbf{null-pointer dereferences} in the kernel; and \textbf{time-of-check to
 time-of-use} (TOCTOU) races, where the kernel checks a value in user memory and then reads it again after the user has
@@ -43,7 +43,7 @@ changed it. The cure for the last one is to copy first and check the copy.
 Protection needs a model of \emph{subjects} (users, processes), \emph{objects} (files, devices) and \emph{rights}
 (read, write, execute). \MOS\,\S9.3 and \OSC chapter 17 describe the two ways to store it: \textbf{access control
 lists} attached to objects, and \textbf{capabilities} held by subjects. UNIX uses a compact ACL, nine permission bits
-for owner, group and others in each inode, plus the rule that user ID 0 (root) may do anything. TurkFS already stores
+for owner, group and others in each inode, plus the rule that user ID 0 (root) may do anything. KaganFS already stores
 the mode, user ID and group ID in every inode (Phase 13), so what is left is to give processes an identity and check it.
 
 \subsection{Measuring before optimising}
@@ -56,10 +56,10 @@ passing a token through pipes, process creation, and file-system throughput.
 
 \subsection{Design, looking back}
 
-\MOS\,\S12.2--12.3 lists principles to measure Turk-OS against: \textbf{simplicity} and
+\MOS\,\S12.2--12.3 lists principles to measure Kagan against: \textbf{simplicity} and
 \textbf{completeness} of the interface, \textbf{orthogonality} (independent concepts that combine freely, like
-\code{fork} and \code{exec}), \textbf{separation of mechanism and policy} (the Turk-OS scheduler), static versus dynamic
-structures (MINIX's fixed tables versus the Turk-OS heap), and top-down versus bottom-up implementation (Turk-OS is
+\code{fork} and \code{exec}), \textbf{separation of mechanism and policy} (the Kagan scheduler), static versus dynamic
+structures (MINIX's fixed tables versus the Kagan heap), and top-down versus bottom-up implementation (Kagan is
 built bottom-up).
 \S12.5 adds Brooks's observations about software projects, including the \emph{second-system effect}: the temptation to
 put everything left out of version 1 into version 2.
@@ -80,15 +80,15 @@ put everything left out of version 1 into version 2.
 \should & \LKD & Ch.~18, \emph{Debugging} & 363--378 & Oopses, assertions and debugging techniques for the hardening work. \\
 \could & \LKP & Ch.~5, \emph{Kernel modules and security -- an overview}; Ch.~7, \emph{Randomizing the memory layout -- KASLR} & 256--261, 362--367 & Defences a production kernel adds. \\
 \should & \SPEC & NIST SP~800-218, \emph{Secure Software Development Framework} (\url{https://csrc.nist.gov/pubs/sp/800/218/final}), practices PS and PW & -- & The yardstick for Task~15.7's release integrity and Task~15.2's review. \\
-\should & \SPEC & Linux kernel documentation, \emph{Kernel Self-Protection} (\url{https://docs.kernel.org/security/self-protection.html}) & -- & The defences of Task~15.3, and the ones Turk-OS leaves out. \\
+\should & \SPEC & Linux kernel documentation, \emph{Kernel Self-Protection} (\url{https://docs.kernel.org/security/self-protection.html}) & -- & The defences of Task~15.3, and the ones Kagan leaves out. \\
 \end{readingplan}
 
 \begin{minixbox}
 MINIX 3's central design goal is reliability, and \OSDI\,\S2.5.1 explains how its structure serves it. Drivers run
 as separate user processes with only the privileges they need, so a buggy driver can't overwrite the kernel. A
 special process, the \textbf{reincarnation server}, watches the drivers and servers and restarts any that crash
-(\OSDI pp.~114 and 599). In Turk-OS, every driver bug is a kernel bug. This contrast belongs in the design review of Task~15.8,
-and Track E below applies the MINIX approach to one Turk-OS driver.
+(\OSDI pp.~114 and 599). In Kagan, every driver bug is a kernel bug. This contrast belongs in the design review of Task~15.8,
+and Track E below applies the MINIX approach to one Kagan driver.
 
 \par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux's hardening goes further: KASLR, signed modules, lockdep and memory-error detectors such as KASAN, plus the \code{BUG_ON}/\code{WARN_ON} assertions and oops reports that \LKD's chapter on debugging describes.
 \end{minixbox}
@@ -118,7 +118,7 @@ clean. Then look specifically for these bugs, because the fuzzer is unlikely to 
 \small\renewcommand{\arraystretch}{1.25}
 \begin{tabularx}{\linewidth}{@{}l X@{}}
 \toprule
-\tkth{Bug class} & \tkth{Where to look in Turk-OS} \\
+\tkth{Bug class} & \tkth{Where to look in Kagan} \\
 \midrule
 missing pointer check & any use of a user pointer outside \code{copy_from_user}/\code{copy_to_user}/\code{strncpy_from_user} \\
 integer overflow & \code{offset + len} in \code{read}/\code{write}/\code{lseek}, \code{brk} arguments, ELF segment sizes, \code{argv} totals \\
@@ -235,7 +235,7 @@ before and after values.
 null system call & time 100\,000 calls to \code{getpid} with \code{rdtsc} \\
 context switch & two processes pass a byte back and forth through two pipes; divide by the number of switches \\
 process creation & \code{fork} + \code{exit} + \code{wait}; and \code{fork} + \code{exec} + \code{wait} of a tiny program \\
-file throughput & write and read a 16\,MiB file on TurkFS, with a cold and a warm buffer cache \\
+file throughput & write and read a 16\,MiB file on KaganFS, with a cold and a warm buffer cache \\
 boot time & \code{rdtsc} in the loader and at the first shell prompt, printed on the serial port \\
 \bottomrule
 \end{tabularx}
@@ -249,7 +249,7 @@ understand the differences, not to win.
 \task{Write the documentation}
 Write an architecture document (a LaTeX file next to this plan, or Markdown): an overview diagram like the one in the
 roadmap; each subsystem in a page or two; the virtual and physical memory maps; the system call table with numbers,
-arguments and errors; the lock order; the TurkFS on-disk format; how to build, run, test and debug; and known
+arguments and errors; the lock order; the KaganFS on-disk format; how to build, run, test and debug; and known
 limitations. Add a \code{README} that gets a newcomer from a clean clone to a running shell, and a
 license (MIT).
 
@@ -263,14 +263,14 @@ side channels such as Spectre and Meltdown. Writing them down is what separates 
 to the threat model.
 
 \task{Release v1.0}
-Add \code{make release}: build the kernel, the user programs, the root archive and a TurkFS image populated with
+Add \code{make release}: build the kernel, the user programs, the root archive and a KaganFS image populated with
 \code{/bin}, \code{/etc} and a home directory, and a GRUB ISO whose \code{grub.cfg} loads the kernel and its modules.
 Check that the release builds from a clean clone (\code{git clone} into a temporary directory, then \code{make release}),
 boot the ISO in QEMU, and tag the commit \code{v1.0}. If you want to try real hardware, an older PC with legacy BIOS (or
 UEFI with CSM) can boot the ISO from a USB stick.
 
 \begin{warnbox}[Writing a USB stick]
-\code{sudo dd if=build/turkos.iso of=/dev/sdX bs=4M} erases the target device completely. Run \code{lsblk} before and
+\code{sudo dd if=build/kagan.iso of=/dev/sdX bs=4M} erases the target device completely. Run \code{lsblk} before and
 after plugging the stick in, make sure \code{sdX} is the stick and not your laptop's disk, and never guess.
 \end{warnbox}
 
@@ -278,15 +278,15 @@ after plugging the stick in, make sure \code{sdX} is the stick and not your lapt
 clone's path out of debug information with \code{-ffile-prefix-map}, build twice from two clean clones, and compare the
 hashes. \code{kernel.elf} and the user binaries must be identical. \code{grub-mkrescue} may embed timestamps in the ISO;
 if two ISOs differ, say so in the release notes instead of hiding it. Publish a \code{SHA256SUMS} file with the ISO, the
-kernel and the TurkFS image, and sign the tag so anyone can check that it came from you.
+kernel and the KaganFS image, and sign the tag so anyone can check that it came from you.
 
 \begin{lst}{sh}{Two clean builds, hashes and a signed tag}
 export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
 git clone -q . ../rel-a && make -C ../rel-a release
 git clone -q . ../rel-b && make -C ../rel-b release
 sha256sum ../rel-a/build/kernel.elf ../rel-b/build/kernel.elf    # the two hashes must match
-(cd ../rel-a/build && sha256sum turkos.iso kernel.elf turkfs.img > SHA256SUMS)
-git tag -s v1.0 -m "Turk-OS 1.0"                                  # needs a GPG key
+(cd ../rel-a/build && sha256sum kagan.iso kernel.elf kaganfs.img > SHA256SUMS)
+git tag -s v1.0 -m "Kagan 1.0"                                  # needs a GPG key
 \end{lst}
 \verify{A fresh clone builds with one command and boots from ISO to the login prompt. \code{make test} passes on the
 tagged commit. Two clean builds give identical \code{kernel.elf} hashes, \code{SHA256SUMS} matches the published files,
@@ -294,7 +294,7 @@ and \code{git tag -v v1.0} reports a good signature.}
 
 \task{Write the design review}
 Write a design review and architecture retrospective of three to five pages. For each subsystem (boot, memory, processes,
-scheduling, synchronisation, system calls, file system, drivers), state what Turk-OS does, how MINIX 3 does it
+scheduling, synchronisation, system calls, file system, drivers), state what Kagan does, how MINIX 3 does it
 (\OSDI) and how Linux does it (\MOS chapter 10), and what should change with hindsight. Use \MOS chapter 12's
 principles as the yardstick, and end with the decision that held up best and the one to reverse first. Record the
 review in \code{docs/} next to the architecture document, and walk through it with at least one reviewer who did not
@@ -302,9 +302,9 @@ write the code.
 
 \section{Extensions after v1.0}
 
-Turk-OS 1.0 is a complete small system. The planned continuation is Stage V (Phases 16--18), which ports it to two
+Kagan 1.0 is a complete small system. The planned continuation is Stage V (Phases 16--18), which ports it to two
 more architectures with the same structure of tasks, checks and exit criteria. The tracks below are open-ended
-instead. They extend Turk-OS in different directions, vary widely in size, and can be combined with each other and
+instead. They extend Kagan in different directions, vary widely in size, and can be combined with each other and
 with Stage V.
 
 \begin{center}
@@ -324,20 +324,20 @@ A.\ Graphics and Turkish text & Request a linear framebuffer through the Multibo
 B.\ Multiprocessor (SMP) & Parse the ACPI MADT, program the local APIC and I/O APIC, start the other CPUs (INIT--SIPI--SIPI), per-CPU data and run queues, TLB shootdown; the Phase 9 spinlocks see real contention & \MOS\,\S8.1 (520--544); \OSTEP Ch.~10 (97--108); \OSC\,\S5.5 (220--227) \\
 C.\ Networking & PCI enumeration, an e1000 or RTL8139 driver in QEMU, Ethernet, ARP, IPv4, ICMP (\code{ping}), UDP, then a minimal TCP and a socket API & \OSC Ch.~19 (733--768); \MOS\,\S8.3 (566--587); OSDev Wiki and RFCs \\
 D.\ 64-bit port & Long mode, four-level paging, Multiboot2, \code{syscall}/\code{sysret}, the x86-64 calling convention. Much easier after Stage V: Phase 16 makes the generic code 64-bit clean, and Phase 18 builds a 64-bit MMU on AArch64 & \OSC\,\S9.6 (379--383); Intel SDM Vol.~3A \\
-E.\ Microkernel experiment & Move the ATA driver (or TurkFS) into a user-space server that talks to the kernel with synchronous messages, as MINIX does, and measure the cost & \OSDI\,\S2.5, \S3.4 (112--125, 252--261); \MOS\,\S1.7.3 (65--68) \\
-F.\ Virtualisation & Examine what QEMU and KVM provide, run Turk-OS with \code{-enable-kvm}, and compare the benchmarks & \OSC Ch.~18 (701--729); \MOS Ch.~7 (471--516) \\
+E.\ Microkernel experiment & Move the ATA driver (or KaganFS) into a user-space server that talks to the kernel with synchronous messages, as MINIX does, and measure the cost & \OSDI\,\S2.5, \S3.4 (112--125, 252--261); \MOS\,\S1.7.3 (65--68) \\
+F.\ Virtualisation & Examine what QEMU and KVM provide, run Kagan with \code{-enable-kvm}, and compare the benchmarks & \OSC Ch.~18 (701--729); \MOS Ch.~7 (471--516) \\
 G.\ Loadable kernel modules & Load relocatable ELF objects (\code{.ko}-style) into a running kernel: resolve their symbols against an exported symbol table, apply relocations, call \code{init} and \code{exit}, and move one driver (the RAM disk) into a module, with \code{insmod}, \code{rmmod} and \code{lsmod} commands & \LKP Ch.~4--5 (143--265); \LKD Ch.~17 (337--362) \\
 \end{longtable}
 \end{center}
 
 Stage V deserves a note. Porting exposes every place where x86 leaked into supposedly generic code, and fixing those
-leaks improves the whole kernel, including the x86 version. Stage V also runs Turk-OS on the project's own RISC-V
-processor, so the kernel and the hardware are validated against each other. Stage V targets Turk-OS 2.0; this phase
-closes with Turk-OS 1.0 complete.
+leaks improves the whole kernel, including the x86 version. Stage V also runs Kagan on the project's own RISC-V
+processor, so the kernel and the hardware are validated against each other. Stage V targets Kagan 2.0; this phase
+closes with Kagan 1.0 complete.
 
 \section{Exit criteria}
 
-\begin{milestonebox}[Turk-OS 1.0]
+\begin{milestonebox}[Kagan 1.0]
 \begin{checklist}
   \item One hour of parallel fuzzing and stress testing, as root and as UID 1000, without a kernel panic or a memory
         leak.
@@ -356,18 +356,18 @@ closes with Turk-OS 1.0 complete.
 
 \begin{questionbox}
 \begin{enumerate}
-  \item Which parts of Turk-OS trust input from user programs, and how is each validated?
+  \item Which parts of Kagan trust input from user programs, and how is each validated?
   \item Give an example of a TOCTOU bug that could exist in \code{execve}, and explain how copying first prevents it.
-  \item Where would MINIX 3 put the Turk-OS ATA driver, and what would change about a driver bug's consequences?
+  \item Where would MINIX 3 put the Kagan ATA driver, and what would change about a driver bug's consequences?
   \item What is the most expensive operation measured, and where does the time go?
-  \item Which of \MOS chapter 12's principles did Turk-OS follow best, and which did it violate most?
-  \item What would break first if Turk-OS ran on two CPUs tomorrow?
+  \item Which of \MOS chapter 12's principles did Kagan follow best, and which did it violate most?
+  \item What would break first if Kagan ran on two CPUs tomorrow?
 \end{enumerate}
 \end{questionbox}
 
 \section{Summary}
 
-Turk-OS 1.0 boots on a PC, protects processes from each other,
+Kagan 1.0 boots on a PC, protects processes from each other,
 schedules them preemptively, manages virtual memory with copy-on-write, stores files in a real on-disk format, and runs
 a shell with pipes. Every path through the system, from a key press to a character on the screen, from \code{fork}
 to \code{exit}, from \code{write} to the disk, is implemented, tested and documented. Further work continues in the

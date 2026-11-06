@@ -1,27 +1,27 @@
 \documentclass[11pt,a4paper]{article}
-\usepackage{turkos}
+\usepackage{kagan}
 
 \begin{document}
-\phaseheader{14}{Userland: libc, Shell and Utilities}{Build the user-space half of the system: a C library, pipes, a real terminal, the Turk shell, and the everyday commands}{90}{96}
+\phaseheader{14}{Userland: libc, Shell and Utilities}{Build the user-space half of the system: a C library, pipes, a real terminal, the Kagan shell, and the everyday commands}{90}{96}
 
-\ataglance{3 weeks}{4}{Phase 13: VFS, descriptors, TurkFS; Phase 11: \code{fork}/\code{exec}/\code{wait}, signals}{Turk-libc
+\ataglance{3 weeks}{4}{Phase 13: VFS, descriptors, KaganFS; Phase 11: \code{fork}/\code{exec}/\code{wait}, signals}{Kagan libc
 (system call wrappers with \code{errno}, strings, \code{malloc}, buffered \code{stdio} with \code{printf}), a
 \code{pipe} system call, a terminal line discipline with echo, line editing, Ctrl+C and Ctrl+D, basic ANSI escape
-codes on the console, \code{tsh} (the Turk shell) with pipelines, redirection and background jobs, about fifteen core
+codes on the console, \code{kash} (the Kagan shell) with pipelines, redirection and background jobs, about fifteen core
 utilities, and a boot that ends at a shell prompt.}
 
 \section{Scope and motivation}
 
-Up to this phase, Turk-OS is driven through a monitor built into the kernel. A real UNIX has no such thing: the
+Up to this phase, Kagan is driven through a monitor built into the kernel. A real UNIX has no such thing: the
 shell is an ordinary user program, and so are \code{ls}, \code{cat} and everything else you type. That design is only
 possible because of the system calls of Phases 10--13, and this phase tests whether they
 work together. \OSTEP chapter 5 argues that \code{fork}, \code{exec}, \code{wait} and file descriptors are
-exactly the right primitives for a shell; \code{tsh} puts that claim to the test.
+exactly the right primitives for a shell; \code{kash} puts that claim to the test.
 
 Most of the code in this phase runs in ring 3. The kernel gains two things: \textbf{pipes}, which connect one
 process's output to another's input, and a proper \textbf{terminal} that edits lines and turns Ctrl+C into a signal.
 Everything else is user space: a C library so programs can be written normally, the shell, and the utilities. At the end of the
-phase, Turk-OS boots to a prompt that accepts \code{ls /bin | wc -l > count.txt}.
+phase, Kagan boots to a prompt that accepts \code{ls /bin | wc -l > count.txt}.
 
 \section{Background}
 
@@ -52,7 +52,7 @@ pipeline never finishes.
   \node[pr, fill=tkGreen!10] (ls) at (0,0) {\textbf{child 1: \code{ls}}\\fd 0: \code{/dev/tty}\\fd 1: pipe \textbf{write} end\\fd 2: \code{/dev/tty}};
   \node[draw=tkAmber!90!black, fill=tkAmber!14, rounded corners=2pt, minimum width=2.8cm, minimum height=1.0cm, align=center] (p) at (5.3,0) {\textbf{pipe}\\4\,KiB buffer in the kernel};
   \node[pr, fill=tkGreen!10] (wc) at (10.6,0) {\textbf{child 2: \code{wc -l}}\\fd 0: pipe \textbf{read} end\\fd 1: \code{/dev/tty}\\fd 2: \code{/dev/tty}};
-  \node[pr, fill=tkBlue!8, text width=5.4cm, minimum height=1.0cm] (sh) at (5.3,2.2) {\textbf{tsh}: \code{pipe(fds)}, fork twice, close both ends itself, then \code{waitpid} for both children};
+  \node[pr, fill=tkBlue!8, text width=5.4cm, minimum height=1.0cm] (sh) at (5.3,2.2) {\textbf{kash}: \code{pipe(fds)}, fork twice, close both ends itself, then \code{waitpid} for both children};
   \draw[tkarrow] (ls.east) -- node[above] {\code{write(1, ...)}} (p.west);
   \draw[tkarrow] (p.east) -- node[above] {\code{read(0, ...)}} (wc.west);
   \draw[tkarrow, dashed] (sh.south west) -- node[left] {fork} (ls.north);
@@ -74,30 +74,30 @@ screen) that let programs move the cursor and change colours.
 
 \subsection{Every layer at once}
 
-This is the phase where a single \texttt{printf("merhaba\textbackslash n")} passes through almost every layer of Turk-OS
+This is the phase where a single \texttt{printf("merhaba\textbackslash n")} passes through almost every layer of Kagan
 (Figure~\ref{fig:layers}). When something prints the wrong thing, walk down this list and check each layer on its own.
 
 \begin{figure}[htbp]
 \centering
 \begin{tikzpicture}[node distance=0.18cm, st/.style={draw=tkNavy!60, rounded corners=2pt, minimum width=10.5cm, minimum height=0.5cm, font=\sffamily\scriptsize, align=center}]
-  \node[st, fill=tkGreen!10] (a) {\code{printf} formats into the \code{stdout} buffer (Turk-libc)};
-  \node[st, fill=tkGreen!10, below=of a] (b) {newline on a terminal: \code{fflush} calls \code{write(1, buf, n)} (Turk-libc)};
+  \node[st, fill=tkGreen!10] (a) {\code{printf} formats into the \code{stdout} buffer (Kagan libc)};
+  \node[st, fill=tkGreen!10, below=of a] (b) {newline on a terminal: \code{fflush} calls \code{write(1, buf, n)} (Kagan libc)};
   \node[st, fill=tkRed!8, below=of b] (c) {\code{int 0x80}, \code{syscall_handler}, \code{sys_write}, \code{copy_from_user} (Phase 10)};
   \node[st, fill=tkBlue!8, below=of c] (d) {descriptor 1 $\rightarrow$ \code{struct file} $\rightarrow$ devfs inode \code{/dev/tty} (Phase 13)};
   \node[st, fill=tkAmber!12, below=of d] (e) {tty driver: output processing, ANSI escapes (this phase)};
   \node[st, fill=tkAmber!12, below=of e] (f) {console: VGA text buffer and serial port, under \code{console_lock} (Phases 2 and 9)};
   \foreach \x/\y in {a/b,b/c,c/d,d/e,e/f} \draw[tkarrow] (\x) -- (\y);
 \end{tikzpicture}
-\caption{The path of one \code{printf} in Turk-OS.}
+\caption{The path of one \code{printf} in Kagan.}
 \label{fig:layers}
 \end{figure}
 
 \section{References}
 
 \begin{readingplan}
-\must & \OSTEP & Ch.~5 \emph{Interlude: Process API}; re-read \S5.4 on why \code{fork}/\code{exec} suits a shell, redirection and pipes & 37--48 & The design of \code{tsh} in a few pages. \\
+\must & \OSTEP & Ch.~5 \emph{Interlude: Process API}; re-read \S5.4 on why \code{fork}/\code{exec} suits a shell, redirection and pipes & 37--48 & The design of \code{kash} in a few pages. \\
 \must & \LOB & Ch.~11, sections \emph{Using C for User Mode Programs} and \emph{A C Library} & 67--68 & What a minimal libc needs. \\
-\should & \OSDI & \S1.3.3 \emph{The Shell}; \S1.4 \emph{System Calls} & 25--42 & The POSIX calls Turk-libc wraps, with a sketch of a shell. \\
+\should & \OSDI & \S1.3.3 \emph{The Shell}; \S1.4 \emph{System Calls} & 25--42 & The POSIX calls Kagan libc wraps, with a sketch of a shell. \\
 \should & \OSDI & \S5.6.9 \emph{Pipes and Special Files} & 563--565 & How MINIX implements pipes and device files. \\
 \should & \OSDI & \S3.8.2 \emph{Terminal Software}; \S3.8.4 \emph{Implementation of the Device-Independent Terminal Driver} & 307--316, 331--350 & Canonical mode, special characters, and a working line discipline. \\
 \should & \MOS & \S5.6.1--5.6.2 \emph{Input Software}, \emph{Output Software} & 394--405 & Cooked versus raw input, escape sequences. \\
@@ -112,15 +112,15 @@ The MINIX terminal driver, \texttt{drivers/tty/tty.c (13600)}, implements canoni
 checks every incoming character against the special characters in the terminal's settings (erase, kill, EOF,
 interrupt, \dots), edits the input queue, echoes, and completes a pending \code{read} when a line is ready. Pipes live
 in the file-system server, \texttt{servers/fs/pipe.c (25900)}: a pipe is an inode whose data blocks act as the
-buffer, and \code{suspend}/\code{release} put readers and writers to sleep and wake them, as the Turk-OS wait queues
+buffer, and \code{suspend}/\code{release} put readers and writers to sleep and wake them, as the Kagan wait queues
 do.
 
-\par\smallskip\textbf{Linux, for comparison.} \LKD On Linux, the C library wraps every system call and turns a negative return value into $-1$ plus \code{errno}, exactly as Turk-libc does.
+\par\smallskip\textbf{Linux, for comparison.} \LKD On Linux, the C library wraps every system call and turns a negative return value into $-1$ plus \code{errno}, exactly as Kagan libc does.
 \end{minixbox}
 
 \section{Implementation}
 
-\task{Turk-libc: the skeleton}
+\task{Kagan libc: the skeleton}
 Create \code{user/libc/} with headers in \code{user/include/}, built into a static \code{libc.a} with
 \code{i686-elf-ar}. Every program links \code{crt0.o}, its own objects and \code{libc.a}. Start with system call
 wrappers that follow the \code{errno} convention, then \texttt{string.h} and \texttt{ctype.h} (copy them from the
@@ -218,8 +218,8 @@ the kernel buffer they copy through, exactly as the pipe does.
 \verify{A program that reads lines and prints them in capitals works like a normal UNIX filter: editing works, Ctrl+D
 ends it, Ctrl+C interrupts it.}
 
-\task{tsh, the Turk shell}
-Write \code{user/sh/tsh.c}. Read a line, split it into words (honouring single and double quotes), and parse it into
+\task{kash, the Kagan shell}
+Write \code{user/sh/kash.c}. Read a line, split it into words (honouring single and double quotes), and parse it into
 one or more pipelines separated by \code{;}. Each pipeline is a list of commands, each with its own redirections (\code{<}, \code{>}, \code{>>}), plus an optional \code{&} for
 background. Built-ins run inside the shell because they must change its own state: \code{cd}, \code{pwd}, \code{exit},
 \code{export} and \code{help}. Everything else runs with \code{fork} and \code{exec}, looked up in the directories of
@@ -227,7 +227,7 @@ background. Built-ins run inside the shell because they must change its own stat
 \code{waitpid(-1, &status, WNOHANG)}. The shell ignores \code{SIGINT} itself and makes each foreground job the
 terminal's foreground group, so Ctrl+C reaches only the job. The core of the pipeline code looks like this:
 
-\begin{lst}{c}{user/sh/tsh.c (running a pipeline)}
+\begin{lst}{c}{user/sh/kash.c (running a pipeline)}
 static void run_pipeline(struct cmd *cmds, int n, bool background)
 {
     int   prev_read = -1;
@@ -277,19 +277,19 @@ system & \code{uptime}, \code{clear} (ANSI escape), \code{sync}, \code{shutdown}
 \end{center}
 
 \task{Boot into the shell}
-Make \code{init} open \code{/dev/tty} for descriptors 0--2, print a banner, start \code{tsh}, and start a new one
+Make \code{init} open \code{/dev/tty} for descriptors 0--2, print a banner, start \code{kash}, and start a new one
 whenever it exits, while still reaping orphans. Keep the old kernel monitor reachable for emergencies, for example on
 the serial port or with a \code{monitor} boot option, but only in debug and test builds: compile its files only when
 the Makefile defines \code{CONFIG_MONITOR}, which the normal and test builds do and the release build of Phase 15
 does not. A command interpreter inside the kernel, with \code{crash} and \code{reboot}, has no place on a system that
-other people use. Code page 437 has no ş, so a banner like ``Turk-OS 1.0 -- Hos
+other people use. Code page 437 has no ş, so a banner like ``Kagan 1.0 -- Hos
 geldiniz!'' stays ASCII until Phase 15.
-\verify{Turk-OS boots straight to \code{turk@os:/$}, and typing \code{exit} brings back a fresh shell. A kernel built
+\verify{Kagan boots straight to \code{kagan@os:/$}, and typing \code{exit} brings back a fresh shell. A kernel built
 without \code{CONFIG_MONITOR} has no monitor symbols: \code{i686-elf-nm build/kernel.elf | grep monitor} prints
 nothing.}
 
 \task{Test the userland}
-Add a \code{-c} option to \code{tsh} (run one command line and exit) and a test runner that executes a list of command
+Add a \code{-c} option to \code{kash} (run one command line and exit) and a test runner that executes a list of command
 lines and compares their output with expected text. Put these cases in \code{make test}.
 
 \begin{center}
@@ -309,7 +309,7 @@ lines and compares their output with expected text. Put these cases in \code{mak
 
 \task{Limits, and the fuzzer again}
 Every resource a process can ask for needs a fixed upper bound, or one process can take all of it. Collect the limits
-in \code{include/limits.h}, which the kernel and Turk-libc share, check each one where the resource is taken, and
+in \code{include/limits.h}, which the kernel and Kagan libc share, check each one where the resource is taken, and
 record the table in the engineering journal.
 
 \begin{center}
@@ -340,7 +340,7 @@ panic.}
 \begin{pitfalls}
 A pipeline never finishes & Some process (often the shell) still holds a pipe write end, so the reader never sees end-of-file & Close every unused end in every process; list open descriptors with a debug command. \\
 Output from \code{printf} is missing & Buffered data never flushed, because the program called \code{_exit} or crashed & \code{exit} must flush; use \code{stderr} for debug output. \\
-Ctrl+C kills the shell & The shell didn't ignore \code{SIGINT}, or it stayed the foreground group & Ignore \code{SIGINT} in \code{tsh}; set the job as foreground before \code{exec} and take it back after \code{wait}. \\
+Ctrl+C kills the shell & The shell didn't ignore \code{SIGINT}, or it stayed the foreground group & Ignore \code{SIGINT} in \code{kash}; set the job as foreground before \code{exec} and take it back after \code{wait}. \\
 \code{ls} in a pipe prints nothing, but works alone & The program writes to the terminal directly instead of to descriptor 1 & All output goes through \code{write(1, ...)}; only the tty driver knows about the screen. \\
 Zombies accumulate after background jobs & Background children are never waited for & Reap with \code{WNOHANG} before every prompt. \\
 Arguments arrive garbled in \code{main} & Wrong \code{argv} layout on the initial stack or missing NULL terminator & Compare the stack with the Phase 11 diagram in GDB. \\
@@ -350,9 +350,9 @@ Arguments arrive garbled in \code{main} & Wrong \code{argv} layout on the initia
 
 \begin{milestonebox}[A usable system]
 \begin{checklist}
-  \item Turk-libc provides system call wrappers with \code{errno}, strings, \code{malloc} and buffered \code{stdio}.
+  \item Kagan libc provides system call wrappers with \code{errno}, strings, \code{malloc} and buffered \code{stdio}.
   \item Pipes, the terminal line discipline and ANSI output work.
-  \item Turk-OS boots to a \code{tsh} prompt; pipelines, redirection, background jobs and Ctrl+C work.
+  \item Kagan boots to a \code{kash} prompt; pipelines, redirection, background jobs and Ctrl+C work.
   \item The core utilities are present and pass the scripted tests.
   \item No zombies remain after a long interactive session.
   \item Every limit in the limits table is enforced; pipe and terminal reads and writes clamp the count to the kernel buffer size.
@@ -366,7 +366,7 @@ Arguments arrive garbled in \code{main} & Wrong \code{argv} layout on the initia
   \item Explain exactly how \code{ls | wc} is wired with \code{pipe}, \code{fork} and \code{dup2}.
   \item Why must unused pipe ends be closed, and by whom?
   \item Why is \code{cd} a built-in and not a program in \code{/bin}?
-  \item Canonical versus raw mode: who implements line editing in Turk-OS, and why not the shell?
+  \item Canonical versus raw mode: who implements line editing in Kagan, and why not the shell?
   \item List every layer a \code{printf} passes through on its way to the screen.
 \end{enumerate}
 \end{questionbox}
@@ -374,10 +374,10 @@ Arguments arrive garbled in \code{main} & Wrong \code{argv} layout on the initia
 \section{Extensions}
 
 Add job control: process groups, \code{fg}, \code{bg} and \code{jobs}, and Ctrl+Z sending \code{SIGTSTP}. Give
-\code{tsh} variables, \code{if}, \code{for} and scripts run from files. Write a small full-screen text editor that uses
+\code{kash} variables, \code{if}, \code{for} and scripts run from files. Write a small full-screen text editor that uses
 raw mode and ANSI escapes. Or port an existing program with modest needs; a small interpreter such as Lua is a
-classic target, and the missing libc functions it asks for show what Turk-libc still lacks.
+classic target, and the missing libc functions it asks for show what Kagan libc still lacks.
 
-\nextphase{15}{Hardening, Polish and Release: Turk-OS 1.0}
+\nextphase{15}{Hardening, Polish and Release: Kagan 1.0}
 \booklegend
 \end{document}
