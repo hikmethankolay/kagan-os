@@ -2,30 +2,30 @@
 \usepackage{turkos}
 
 \begin{document}
-\phaseheader{3}{Segmentation, the IDT and CPU Exceptions}{Install your own descriptor tables and turn every CPU fault into a readable crash report instead of a silent reboot}{16}{22}
+\phaseheader{3}{Segmentation, the IDT and CPU Exceptions}{Install the kernel's own descriptor tables and turn every CPU fault into a readable crash report instead of a silent reboot}{16}{22}
 
-\ataglance{2 weeks}{4}{Phase 2: C kernel with \code{kprintf}, serial logging and \code{panic}}{Your own Global Descriptor Table
+\ataglance{2 weeks}{4}{Phase 2: C kernel with \code{kprintf}, serial logging and \code{panic}}{A kernel-owned Global Descriptor Table
 (flat model with kernel and user segments), an Interrupt Descriptor Table with 32 exception stubs in NASM, a common C
 handler that receives the full register state, and a crash screen that names the exception and dumps the registers.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
-Right now, if your kernel divides by zero or jumps to a bad address, the CPU looks for an exception handler, finds
-none, faults again, and resets the machine. You see QEMU reboot and nothing else. After this phase the same bug
-prints ``Divide error (\#DE) at EIP=0x00101234'' with every register, and you can go straight to the faulty line.
+Without an IDT, a kernel that divides by zero or jumps to a bad address makes the CPU look for an exception
+handler, find none, fault again, and reset the machine. QEMU simply reboots. With this phase in place the same bug
+prints ``Divide error (\#DE) at EIP=0x00101234'' with every register, which leads straight to the faulty line.
 No other change in the whole project saves as much debugging time.
 
 The phase has two parts that belong together. The \textbf{GDT} defines the segments the CPU uses and, more
-importantly for us, the privilege levels: ring 0 for the kernel and ring 3 for users. The Multiboot contract says
-GRUB's GDT may be invalid, so you have to install your own before touching a segment register. The \textbf{IDT} tells
-the CPU where to jump for each of the 256 interrupt vectors. Vectors 0--31 are CPU exceptions, which you handle now.
+importantly for Turk-OS, the privilege levels: ring 0 for the kernel and ring 3 for users. The Multiboot contract says
+GRUB's GDT may be invalid, so the kernel installs its own before touching a segment register. The \textbf{IDT} tells
+the CPU where to jump for each of the 256 interrupt vectors. Vectors 0--31 are CPU exceptions, handled in this phase.
 Vectors 32--47 will be hardware interrupts in Phase 4, and vector \code{0x80} becomes the system call gate in
 Phase 10. This is the \emph{trap table} that \OSTEP chapter 6 describes: the kernel installs it at boot, and from
 then on the hardware knows where to go when something needs the kernel's attention.
 
-\section{Concepts you need}
+\section{Background}
 
-\subsection{Segmentation, and why we switch it off}
+\subsection{Segmentation, and why Turk-OS neutralises it}
 
 In protected mode every memory access goes through a segment. A \textbf{segment selector} in CS, DS, SS and the
 other segment registers picks a \textbf{descriptor} from the GDT (Figure~\ref{fig:selector}), and the descriptor
@@ -57,7 +57,7 @@ level} of running code is the DPL of its code segment, so ring 0 and ring 3 need
 \textbf{TSS} descriptor that Phase 10 needs for user mode lives in the GDT.
 
 Each descriptor packs its fields into 8 bytes in a famously awkward layout (Figure~\ref{fig:desc}), a leftover from
-the 286. The two bytes you choose are the \textbf{access byte} (present bit, DPL, code or data, readable or writable)
+the 286. The two bytes that matter are the \textbf{access byte} (present bit, DPL, code or data, readable or writable)
 and the \textbf{flags} nibble (4\,KiB granularity and 32-bit operation). Table~\ref{tab:gdt} lists the values
 Turk-OS uses.
 
@@ -117,7 +117,7 @@ from the \code{int n} instruction, which is how user programs will call the kern
 by what happens on return (Table~\ref{tab:exc}). After a \textbf{fault}, the saved EIP points at the faulting
 instruction, so returning retries it; that is how page faults will work in Phase 6. After a \textbf{trap}, EIP points
 past the instruction, so execution continues; \code{int3} works this way. An \textbf{abort} means the machine state is
-unreliable, and all you can do is report it and stop.
+unreliable, and the only option is to report it and stop.
 
 \begin{table}[htbp]
 \centering\small\renewcommand{\arraystretch}{1.2}
@@ -146,7 +146,7 @@ unreliable, and all you can do is report it and stop.
 21 & \#CP & Control protection & fault & yes \\
 \bottomrule
 \end{tabular}
-\caption{The CPU exceptions you will meet. Vectors 9, 15, 20 and 22--31 are reserved or rare; give them a generic handler.}
+\caption{The CPU exceptions Turk-OS handles. Vectors 9, 15, 20 and 22--31 are reserved or rare and get a generic handler.}
 \label{tab:exc}
 \end{table}
 
@@ -159,7 +159,7 @@ enabled. The CPU then pushes EFLAGS, CS and EIP on the stack and, for some excep
 handler. The handler returns with \code{iret}, which pops EIP, CS and EFLAGS back. (When the interrupt arrives in ring
 3, the CPU also switches stacks and pushes the user SS and ESP; that is Phase 10's topic.)
 
-C can't be the handler directly: a C function does not know it must preserve every register and return with
+C cannot be the handler directly: a C function does not know it must preserve every register and return with
 \code{iret}. So each vector gets a tiny assembly stub that makes the stack look the same for every interrupt,
 saves all registers, and calls one C function with a pointer to the saved state (Figure~\ref{fig:frame}). Getting
 this layout exactly right, and matching it with a C struct, is the heart of the phase.
@@ -190,37 +190,37 @@ this layout exactly right, and matching it with a C struct, is the heart of the 
 \label{fig:frame}
 \end{figure}
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
 \must & \LOB & Ch.~5 \emph{Segmentation}: accessing memory, the GDT, loading the GDT & 33--37 & Tasks 3.1--3.2. \\
 \must & \LOB & Ch.~6 \emph{Interrupts and Input}, up to and including \emph{Loading the IDT} & 39--43 & Tasks 3.3--3.5; PIC and keyboard wait for Phase 4. \\
 \must & \OSTEP & Ch.~6 \emph{Mechanism: Limited Direct Execution} & 49--62 & Why a trap table exists and what the hardware does on a trap. \\
-\must & \OSTEP & Ch.~16 \emph{Segmentation} & 149--160 & The general idea behind the descriptors you are writing. \\
+\must & \OSTEP & Ch.~16 \emph{Segmentation} & 149--160 & The general idea behind the GDT descriptors. \\
 \should & \OSDI & \S4.6.2 \emph{Segmentation with Paging: The Intel Pentium} & 415--420 & Selectors, descriptors, GDT and LDT on real x86 hardware. \\
 \should & \MOS & \S3.7.3 \emph{Segmentation with Paging: The Intel x86} & 247--252 & A second explanation, with the history of why x86 kept segments. \\
 \should & \MOS & \S5.1.5 \emph{Interrupts Revisited} & 347--351 & Precise and imprecise interrupts; what ``saved state'' means. \\
-\should & \OSDI & \S2.6.8 \emph{Interrupt Handling in MINIX 3} & 167--178 & A complete, working version of what you build here. \\
+\should & \OSDI & \S2.6.8 \emph{Interrupt Handling in MINIX 3} & 167--178 & A complete, working implementation of this phase's design. \\
 \could & \OSC & \S1.2 \emph{Computer-System Organization} (interrupts); \S17.3 \emph{Protection Rings} & 7--15, 669--671 & Interrupt mechanics and rings in general terms. \\
-\should & \LKP & Ch.~6, \emph{Understanding process and interrupt contexts} & 268--270 & The two contexts your handlers run in, and what each may do. \\
+\should & \LKP & Ch.~6, \emph{Understanding process and interrupt contexts} & 268--270 & The two contexts handlers run in, and what each may do. \\
 \end{readingplan}
 
-From the Intel SDM Volume 3A, read the parts of chapter 3 (protected-mode memory management) about segment
-selectors and descriptors, and chapter 6 (interrupt and exception handling), especially the exception
-classification, the error code format, and the per-exception reference at its end. Keep that last part open while
-you write the handler names.
+The authoritative source is the Intel SDM Volume 3A: the parts of chapter 3 (protected-mode memory management) about
+segment selectors and descriptors, and chapter 6 (interrupt and exception handling), especially the exception
+classification, the error code format, and the per-exception reference at its end, which is the reference for the
+handler names.
 
 \begin{minixbox}
 MINIX builds its GDT and IDT in \texttt{kernel/protect.c (08300)}; look for \code{prot_init}, which fills the tables
-from a list of gate descriptions much like your \code{idt_init}. The entry stubs are macros in
-\texttt{kernel/mpx386.s (06300)}, and exceptions end up in \texttt{kernel/exception.c (08000)}. There, notice the
-decision you will make in Phase 10: an exception in a user process becomes a signal to that process (for example,
+from a list of gate descriptions much like \code{idt_init} in Task~3.3. The entry stubs are macros in
+\texttt{kernel/mpx386.s (06300)}, and exceptions end up in \texttt{kernel/exception.c (08000)}. That file shows the
+decision Turk-OS makes in Phase 10: an exception in a user process becomes a signal to that process (for example,
 divide error sends \code{SIGFPE}), while an exception inside the kernel is a panic.
 
 \par\smallskip\textbf{Linux, for comparison.} \LKD Linux keeps the flat model too: its GDT holds kernel and user code and data segments, the TSS and per-CPU entries, and every exception goes through the same kind of stub table into C handlers.
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{Describe the GDT in C}
 Write \code{kernel/arch/i386/gdt.c}. Pack the structs (they are hardware formats), fill the five entries of
@@ -271,7 +271,7 @@ void gdt_init(void)
 
 \task{Load the GDT and reload the segment registers}
 \code{lgdt} only tells the CPU where the table is. The segment registers still hold the old descriptors in a hidden
-cache until you reload them. Data segments can be loaded with \code{mov}; CS can only be changed by a far jump (or a
+cache until they are reloaded. Data segments can be loaded with \code{mov}; CS can only be changed by a far jump (or a
 far call or \code{iret}).
 
 \begin{lst}{asm}{kernel/arch/i386/gdt_flush.s}
@@ -290,13 +290,13 @@ gdt_flush:
     ret
 \end{lst}
 \verify{The kernel keeps running after \code{gdt_init()}. In the QEMU monitor, \code{info registers} shows a
-\code{GDT=} line whose base is the address of your \code{gdt} array (check with \code{i686-elf-nm}) and whose limit is
+\code{GDT=} line whose base is the address of the \code{gdt} array (check with \code{i686-elf-nm}) and whose limit is
 \code{0000002f}; CS is \code{0008} and DS is \code{0010}.}
 
 \task{Build and load the IDT}
 Write \code{kernel/arch/i386/idt.c} with a 256-entry table of gates, a setter, and \code{idt_init}, which installs the
-32 exception stubs from the next task and loads the table with \code{lidt}. Entries you don't fill stay zero, which
-means ``not present''; if such a vector fires you get a \#GP, which your handler will report.
+32 exception stubs from the next task and loads the table with \code{lidt}. Unfilled entries stay zero, which
+means ``not present''; if such a vector fires the CPU raises a \#GP, which the handler reports.
 
 \begin{lst}{c}{kernel/arch/i386/idt.c}
 struct idt_entry {
@@ -331,7 +331,7 @@ void idt_init(void)
 \end{lst}
 
 \task{Write the interrupt stubs}
-This is the most important assembly in the project, so type it yourself and comment every line. Two NASM macros
+This is the most important assembly in the project; every line carries a comment. Two NASM macros
 generate the 32 stubs: one for vectors where the CPU pushes an error code and one that pushes a dummy zero, so every
 frame has the same shape. All stubs jump to one common routine that builds the rest of Figure~\ref{fig:frame}.
 
@@ -460,7 +460,7 @@ void isr_handler(struct regs *r)
 \begin{tipbox}[Portability note]
 Every field of \code{struct regs} is an x86 register. In Phase 16 it becomes \code{struct trapframe}, one per
 architecture, and code outside \code{kernel/arch/i386} reads it only through small helpers: the system call number,
-an argument, the return value, the program counter. Start the habit now. Leave field names like \code{eax},
+an argument, the return value, the program counter. The convention applies from this phase on: leave field names like \code{eax},
 \code{eip} and \code{cs} to the x86 code, and when a later phase (page faults, system calls, signals) needs a
 register elsewhere, give it a one-line inline helper instead of a field name.
 \end{tipbox}
@@ -471,8 +471,8 @@ pointers. Phase 4 installs the timer and keyboard handlers through it, Phase 6 t
 the system call handler. Register a breakpoint handler now that prints ``breakpoint at EIP=\dots'' and simply
 returns.
 
-\task{Trigger every exception you can}
-Add a \code{crash} command to your boot sequence (a real command monitor arrives in Phase 4). Write one tiny
+\task{Trigger every reachable exception}
+Add a \code{crash} command to the boot sequence (a real command monitor arrives in Phase 4). Write one tiny
 function per exception and check that each gives the expected report. The \code{volatile} stops the compiler from
 noticing the division by zero at compile time.
 
@@ -490,7 +490,7 @@ keeps running.}
 
 Two QEMU tools are essential here. \code{-d int -no-reboot} logs every interrupt and exception with its vector
 (\code{v=0d} is \#GP, \code{v=0e} is \#PF) and the error code, and stops instead of rebooting on a triple fault. The
-monitor's \code{info registers} shows the GDT and IDT base and limit. If you install Bochs, its debugger can also
+monitor's \code{info registers} shows the GDT and IDT base and limit. With Bochs installed, its debugger can also
 decode the tables with \code{info gdt} and \code{info idt}.
 
 \begin{pitfalls}
@@ -502,15 +502,15 @@ Crash or garbage after \code{iret} & Unbalanced stack: missing \code{add esp, 8}
 Double fault (vector 8) on every exception & The handler itself faults, for example because of a stack overflow & Use \code{-d int} to see the first exception in the chain; that one is the real bug. \\
 \end{pitfalls}
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[No more silent reboots]
 \begin{checklist}
-  \item \code{info registers} shows your GDT (limit \code{0x2f}) and IDT (limit \code{0x7ff}), with CS=\code{0x08} and DS=\code{0x10}.
+  \item \code{info registers} shows the kernel GDT (limit \code{0x2f}) and IDT (limit \code{0x7ff}), with CS=\code{0x08} and DS=\code{0x10}.
   \item Divide by zero, \code{ud2} and a bad segment load each produce a named crash report with registers, and no reboot.
   \item \code{int3} prints a message and execution continues after it.
   \item \code{register_interrupt_handler} works, and \code{sizeof(struct regs)} is checked at compile time.
-  \item You can explain every line of \code{isr_common}.
+  \item Every line of \code{isr_common} is commented with its effect on the stack.
 \end{checklist}
 \end{milestonebox}
 
@@ -520,18 +520,18 @@ Double fault (vector 8) on every exception & The handler itself faults, for exam
   \item Decode selector \code{0x23}: which GDT entry, which table, which RPL?
   \item What does an interrupt gate do to the IF flag that a trap gate does not? Why does Turk-OS want that?
   \item Which exceptions push an error code, and why do the other stubs push a dummy value?
-  \item Draw the stack at the moment \code{isr_handler} is called.
-  \item Explain the difference between a fault, a trap and an abort, with one example of each.
+  \item What does the stack contain, from top to bottom, at the moment \code{isr_handler} is called?
+  \item What distinguishes a fault, a trap and an abort? Give one example of each.
   \item Why does returning from the divide-error handler run the handler again?
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 
 Print a backtrace in the crash report by walking the chain of saved EBP values: \code{[ebp]} holds the caller's EBP and
-\code{[ebp+4]} the return address. Because you compile with \code{-fno-omit-frame-pointer}, the chain is intact. Print
-raw addresses for now and symbolise them on the host with \code{addr2line}; in Phase 15 you can embed a symbol table.
-If you want to go deep, give the double fault its own known-good stack through a task gate, so even a kernel stack
+\code{[ebp+4]} the return address. Because the kernel is compiled with \code{-fno-omit-frame-pointer}, the chain is intact. Print
+raw addresses for now and symbolise them on the host with \code{addr2line}; Phase 15 can embed a symbol table.
+A deeper extension gives the double fault its own known-good stack through a task gate, so even a kernel stack
 overflow produces a report. That trick needs the TSS machinery from Phase 10.
 
 \nextphase{4}{Hardware Interrupts: PIC, Timer and Keyboard}

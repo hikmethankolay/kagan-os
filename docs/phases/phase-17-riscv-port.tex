@@ -2,7 +2,6 @@
 \usepackage{turkos}
 
 \begin{document}
-\renewcommand{\progresslabel}{Stage V progress toward Turk-OS 2.0 (this phase in red)}
 \phaseheader{17}{The RISC-V Port}{Boot the same kernel and userland on a second architecture: QEMU's RISC-V virt board, with OpenSBI as the firmware and Turk-OS in supervisor mode}{20}{60}
 
 \ataglance{5--6 weeks (Task 17.13 on your own core is open-ended)}{4}{Phase 16 complete: the portable core, both cross
@@ -11,19 +10,19 @@ compilers, the FDT parser and its host tests}{Turk-OS on \code{qemu-system-riscv
 Sv32 higher-half kernel at \code{0xC0000000}, user mode through \code{ecall}, a virtio-blk disk carrying TurkFS, and
 \code{make ARCH=riscv32 test}. Optionally, a checked plan for running it on Timur-RV32IMC.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
 Phase 16 claimed that everything outside \code{kernel/arch/i386} is generic. This phase tests the claim on a second
-machine: you write the RISC-V half of \code{include/arch.h}, and the scheduler, the VFS, TurkFS, \code{fork} and the
+machine: only the RISC-V half of \code{include/arch.h} is new, and the scheduler, the VFS, TurkFS, \code{fork} and the
 whole userland are recompiled, not rewritten. Every place where that fails is a leak the audit of Task~16.2 missed; fix
 it in the generic code, note it in \code{docs/porting.md}, and keep \code{make ARCH=i386 test} passing.
 
 RISC-V comes first because it changes little at once. RV32 keeps the 32-bit word, and Sv32 is two-level 4\,KiB paging
 like x86's, so the kernel stays at \code{0xC0000000} and Phase 10's user layout stays as it is. What changes is the boot
 path (firmware instead of GRUB), traps (CSRs instead of an IDT and a TSS), devices (a devicetree instead of fixed PC
-addresses) and the assembler (GNU \code{as} instead of NASM). And the road leads on to your own core (Task~17.13).
+addresses) and the assembler (GNU \code{as} instead of NASM). It also prepares hardware bring-up on the Timur-RV32IMC soft core (Task~17.13).
 
-\section{Concepts you need}
+\section{Background}
 
 \subsection{RISC-V in one page}
 
@@ -141,7 +140,7 @@ IRQ 1, 4, 14 & interrupt 9, supervisor external & ask the PLIC which device \\
 \subsection{Interrupts: the timer through the SBI, devices through the PLIC}
 
 S-mode sees three interrupt sources, each enabled by a bit in \code{sie} and all of them by \code{sstatus}.SIE. The
-\textbf{timer} comparator belongs to M-mode on this board, so you arm it with an SBI call; it fires once, and the
+\textbf{timer} comparator belongs to M-mode on this board, so the kernel arms it with an SBI call; it fires once, and the
 handler sets the next deadline. The \code{time} counter runs at the devicetree's \code{timebase-frequency}, 10\,MHz
 here. \textbf{External} interrupts all arrive as cause 9: the \textbf{PLIC} (platform-level interrupt controller)
 collects the device lines, and the handler reads its \emph{claim} register to learn the source and writes the number
@@ -180,8 +179,8 @@ entries, VPN[1] selects one, VPN[0] an entry of the second-level table. A root e
 
 The entries differ more (Table~\ref{tab:pte}). V (valid) replaces P; an entry with R, W and X all zero points to
 the next table, any other is a \textbf{leaf}; every page has an execute bit. And a core may raise a page fault instead
-of setting the \textbf{A} and \textbf{D} bits. QEMU sets them, so the bug hides there, but a simple core, possibly your
-own, will not. Turk-OS never reads them, so it sets both in every leaf, as the specification recommends.
+of setting the \textbf{A} and \textbf{D} bits. QEMU sets them, so the bug hides there, but a simple core, such as
+Timur-RV32IMC, may not. Turk-OS never reads them, so it sets both in every leaf, as the specification recommends.
 
 \begin{table}[htbp]
 \centering\small\renewcommand{\arraystretch}{1.15}
@@ -206,7 +205,7 @@ Flush one page & \code{invlpg} & \code{sfence.vma va, zero} \\
 \subsection{The virt board}
 
 QEMU's \code{virt} board is a small, clean set of devices whose addresses and interrupts OpenSBI passes to the
-kernel in a \textbf{flattened devicetree} (FDT), read by your Task~16.10 parser. Table~\ref{tab:virt} shows QEMU 10.2
+kernel in a \textbf{flattened devicetree} (FDT), read by the Task~16.10 parser. Table~\ref{tab:virt} shows QEMU 10.2
 with the default 128\,MiB; always take the real values from the FDT.
 
 \begin{table}[htbp]
@@ -230,7 +229,7 @@ with the default 128\,MiB; always take the real values from the FDT.
 
 
 \begin{decisionbox}{Run at the physical address first, move to 0xC0000000 in Task 17.7}
-You could link at \code{0xC0400000} from day one and enable Sv32 in \code{boot.S}. Don't, yet: with paging off,
+Linking at \code{0xC0400000} from the start and enabling Sv32 in \code{boot.S} is possible, but premature: with paging off,
 each bug in Tasks 17.2--17.6 lives in one new thing (the entry code, a CSR, a device address). Link at the physical
 address OpenSBI jumps to, keep \code{satp} at 0, and make \code{P2V}/\code{V2P} the identity by setting
 \code{KERNEL_BASE} to \code{PHYS_BASE} (\code{0x80000000}) in \code{<arch/memlayout.h>}. Task~17.7 then changes one
@@ -238,39 +237,39 @@ number and the linker script and adds a boot page table, and everything above ke
 macros: Phases 1--6 of x86, compressed into one phase.
 \end{decisionbox}
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
 \must & \RVSPEC & Privileged ISA (Vol.~II), chapter \emph{Supervisor-Level ISA}: \emph{Supervisor CSRs}, \emph{Supervisor Instructions}, \emph{Sv32} & -- & Every bit, cause and PTE flag of Tasks 17.4--17.9. \\
 \must & \RVSPEC & SBI specification: ch.~3 \emph{Binary Encoding}, ch.~4 \emph{Base}, ch.~6 \emph{Timer}, ch.~10 \emph{System Reset}, ch.~12 \emph{Debug Console Extension} & -- & The firmware calls of Tasks 17.2, 17.5, 17.12. \\
-\should & \RVSPEC & Unprivileged ISA (Vol.~I): \emph{RV32I Base Integer Instruction Set}, \emph{Zicsr}; skim \emph{C} and \emph{A} & -- & What you write by hand and read in GDB. \\
+\should & \RVSPEC & Unprivileged ISA (Vol.~I): \emph{RV32I Base Integer Instruction Set}, \emph{Zicsr}; skim \emph{C} and \emph{A} & -- & The instructions written by hand and read in GDB. \\
 \must & \XVSIX & Ch.~4 \emph{Traps and system calls} & -- & The same trap path on RV64, line by line. \\
 \should & \XVSIX & Ch.~3 \emph{Page tables}; Ch.~5 \emph{Page faults}; Ch.~6 \emph{Interrupts and device drivers}; Ch.~7 \emph{Locking} & -- & Sv39 tables, COW, the UART and timer, \code{amoswap} locks. \\
 \must & \SPEC & Virtio: \S2.1 \emph{Device Status Field}, \S2.2 \emph{Feature Bits}, \S2.7 \emph{Split Virtqueues}; \S3.1 \emph{Device Initialization}; \S4.2 \emph{Virtio Over MMIO}; \S5.2 \emph{Block Device} & -- & All of Task 17.10. \\
 \should & \SPEC & Devicetree specification \S3.4 \code{/memory}, \S3.5 \code{/reserved-memory}, \S3.6 \code{/chosen}; QEMU's \emph{`virt' Generic Virtual Platform} page for RISC-V & -- & What Tasks 17.1 and 17.6 read. \\
 \should & \OSTEP & Ch.~20 \S20.3 \emph{Multi-level Page Tables} (re-read) & 215--222 & Sv32 is this design with other bit names. \\
-\could & \OSTEP & Ch.~6 \emph{Mechanism: Limited Direct Execution} (re-read with Figure~\ref{fig:trap}) & 49--62 & Which part of a trap is hardware, which is yours. \\
+\could & \OSTEP & Ch.~6 \emph{Mechanism: Limited Direct Execution} (re-read with Figure~\ref{fig:trap}) & 49--62 & Which part of a trap is hardware and which is software. \\
 \could & \OSTEP & Ch.~28 \S28.6--28.11 (test-and-set to fetch-and-add, with LL/SC) & 306--313 & \code{amoswap.w} is test-and-set; \code{lr.w}/\code{sc.w} are LL/SC. \\
 \end{readingplan}
 
 Keep the \emph{RISC-V ELF psABI} (\url{https://github.com/riscv-non-isa/riscv-elf-psabi-doc}) at hand for the
 calling convention and the ELF flags of Task~17.11.
 
-\begin{minixbox}[Real-system lens: how xv6-riscv does it]
+\begin{minixbox}[Prior art: how xv6-riscv does it]
 xv6 runs on the same board. It has no firmware: it boots with \code{-bios none}, \code{kernel/entry.S} starts in
 M-mode, and \code{start.c} delegates all traps to S-mode, opens the PMP, enables Sstc for the timer and \code{mret}s
-into \code{main}; your kernel never touches an M-mode CSR. It is RV64 with Sv39, so \code{walk()} in \code{vm.c}
-descends three levels to your two. Its kernel has its own page table, so \code{trampoline.S} switches \code{satp} on
+into \code{main}; Turk-OS never touches an M-mode CSR. It is RV64 with Sv39, so \code{walk()} in \code{vm.c}
+descends three levels to Turk-OS's two. Its kernel has its own page table, so \code{trampoline.S} switches \code{satp} on
 every trap; Turk-OS maps the kernel everywhere and needs no trampoline. The rest maps one to one: \code{kernelvec.S}
-and \code{trap.c} are your \code{entry.S} and \code{trap.c}, \code{plic.c} is a dozen lines, \code{uart.c} drives a
+and \code{trap.c} correspond to Turk-OS's \code{entry.S} and \code{trap.c}, \code{plic.c} is a dozen lines, \code{uart.c} drives a
 16550, \code{swtch.S} saves \code{ra}, \code{sp} and \code{s0}--\code{s11} (in the process structure),
 \code{spinlock.c} compiles to \code{amoswap.w.aq}, and \code{virtio_disk.c} builds Task~17.10's three-descriptor request.
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{Meet the board}
-Look before you program. Run OpenSBI alone and read its banner: \code{Domain0 Next Address} is where it will jump (0
+Inspect the board before writing code. Run OpenSBI alone and read its banner: \code{Domain0 Next Address} is where it will jump (0
 without \code{-kernel}, the ELF entry point with one), \code{Next Arg1} the FDT it will pass, \code{Next Mode} S-mode.
 Then list the memory map and dump the devicetree next to the blobs of Task~16.10.
 
@@ -285,9 +284,9 @@ Find each row of Table~\ref{tab:virt} in the tree, and note three surprises: \te
 \texttt{\#size-cells} are 2 even on this 32-bit machine, so each \code{reg} number is two cells; a device's PLIC source
 is its \code{interrupts} property; and there is no \code{/reserved-memory}, because OpenSBI adds it to the copy it
 passes on (Task~17.6). Record it all in \code{docs/porting.md}.
-\verify{Your notes give, without looking again: OpenSBI's next address for an ELF kernel, the FDT address with 128\,MiB
+\verify{The notes give, without another look at the board: OpenSBI's next address for an ELF kernel, the FDT address with 128\,MiB
 of RAM (\code{0x87e00000}, 2\,MiB below the end of RAM), the UART's interrupt (10) and the timebase (10\,000\,000 Hz).
-The new blob passes your FDT host tests.}
+The new blob passes the FDT host tests.}
 
 \task{The first instructions}
 OpenSBI enters in S-mode with \code{a0} = hart ID, \code{a1} = the FDT's physical address and \code{satp} = 0, and
@@ -545,7 +544,7 @@ kernel and the FDT as reserved. A test that allocates every free frame finds non
 allocator tests pass.}
 
 \task{Sv32 and the higher half}
-Now move. In \code{<arch/memlayout.h>}, set \code{KERNEL_BASE} to \code{0xC0000000} and keep \code{PHYS_BASE} at
+Move the kernel to the higher half. In \code{<arch/memlayout.h>}, set \code{KERNEL_BASE} to \code{0xC0000000} and keep \code{PHYS_BASE} at
 \code{0x80000000}, so \code{P2V(pa)} is \code{pa - PHYS_BASE + KERNEL_BASE}: RAM appears at \code{0xC0000000}, the
 kernel at \code{0xC0400000}, and the direct map may cover 512\,MiB as on x86. In \code{kernel.ld}, start at
 \code{0xC0400000}, give every output section a load address \code{AT(ADDR(...) - 0x40000000)}, and make the entry point
@@ -618,7 +617,7 @@ from cause 15, \code{exec} from 12, \code{user} from SPP, and \code{present} fro
 works unchanged.
 
 With \code{sstatus}.SUM clear, any S-mode access to a U page faults, \code{copy_from_user} included. That is the
-protection you want everywhere except inside uaccess, the RISC-V counterpart of x86's SMAP. So SUM is set only by
+protection wanted everywhere except inside uaccess, the RISC-V counterpart of x86's SMAP. So SUM is set only by
 \code{arch_uaccess_begin()} (\code{csrs sstatus} with bit 18) and cleared by \code{arch_uaccess_end()}
 (\code{csrc}); \code{entry.S} clears it on every trap, and \code{sret} restores the saved value, so a timer interrupt in
 the middle of a copy neither leaks SUM into another task nor loses it. \code{arch_signal_frame} and
@@ -731,7 +730,7 @@ evil program behaves as in the table in one boot: \code{ro_read} returns \code{-
 \code{cow_read}'s data is seen only by the reader, and \code{nxdata} is killed with cause 12.}
 
 \task{A disk on virtio}
-The disk is a virtio block device (Concepts aside: a virtio device shares rings of buffer descriptions with the
+The disk is a virtio block device (In brief: a virtio device shares rings of buffer descriptions with the
 driver instead of imitating old hardware). QEMU's virtio-mmio defaults to the legacy interface (version 1); ask for
 version 2:
 
@@ -789,7 +788,7 @@ the used ring and wakes the waiter. Sectors are 512 bytes. Register \code{vda} t
 \code{struct blockdev}, and the buffer cache and TurkFS sit on top unchanged.
 
 The used ring is written by the device, so treat its \code{id} like any other outside input: check it against
-\code{QSIZE} before using it as an index into your request table, and log and skip an entry that is out of range. A
+\code{QSIZE} before using it as an index into the request table, and log and skip an entry that is out of range. A
 virtio device can DMA anywhere in guest memory, so this is no defence against a hostile one (QEMU's devices are
 trusted, as the threat model of Task~16.10 says), but the check costs one comparison and turns a device bug into a log
 line instead of a write through a wild pointer.
@@ -857,8 +856,8 @@ status 1, \code{make ARCH=i386 test} still passes, the CI matrix is green for \c
 ends without a panic.}
 
 \task{Optional: Turk-OS on Timur-RV32IMC}
-This depends on your hardware project: start when Timur passes its own tests and runs a bare-metal program on its
-UART. Check what the core offers, fill the gaps in firmware, and build a kernel that needs nothing more.
+This is a hardware bring-up target for the Timur-RV32IMC soft core. It starts once Timur passes its own tests and
+runs a bare-metal program on its UART. Check what the core offers, fill the gaps in firmware, and build a kernel that needs nothing more.
 
 \begin{center}
 \small\renewcommand{\arraystretch}{1.15}
@@ -881,10 +880,10 @@ Something must run in M-mode. Either port OpenSBI, whose \emph{generic} platform
 small SBI shim: an \code{mtvec} handler for Base probes, TIME (program \code{mtimecmp}; on the machine timer interrupt
 set \code{mip}.STIP and mask MTIE), DBCN and SRST, with everything else delegated through \code{medeleg} and
 \code{mideleg}, ending in an \code{mret} to the kernel with \code{a0} = hart ID and \code{a1} = FDT. Develop it on QEMU:
-\code{-bios build/shim.elf -kernel build/riscv32/kernel.elf} runs your shim in M-mode at \code{0x80000000} instead of
+\code{-bios build/shim.elf -kernel build/riscv32/kernel.elf} runs the shim in M-mode at \code{0x80000000} instead of
 OpenSBI (\code{-bios none} boots one image in M-mode, as xv6 does). Build the Timur kernel with \code{-march=rv32imc_zicsr_zifencei},
 an initrd-only root and the UART console, and fill the table with Timur's real answers in \code{docs/porting.md}.
-\verify{Your shim boots the unchanged QEMU kernel to the shell, and the \code{rv32imc} kernel contains no
+\verify{The shim boots the unchanged QEMU kernel to the shell, and the \code{rv32imc} kernel contains no
 \code{amoswap}, \code{lr.w} or \code{sc.w} (\code{riscv32-elf-objdump -d}). On Timur, the milestone is the banner, then
 the prompt.}
 
@@ -896,7 +895,7 @@ With \code{-s -S}, a GDB that knows RISC-V (Task~16.1) and \code{set architectur
 
 \begin{pitfalls}
 \code{unrecognized opcode `csrr a0,sstatus', extension `zicsr' required} & Current binutils keep the CSR instructions out of the base ISA & Add \code{_zicsr_zifencei} to \code{-march}. \\
-OpenSBI's banner, then nothing & Linked at the wrong address, or a virtual entry point & \code{readelf -l}; the banner's \code{Domain0 Next Address} must be your entry. \\
+OpenSBI's banner, then nothing & Linked at the wrong address, or a virtual entry point & \code{readelf -l}; the banner's \code{Domain0 Next Address} must be the kernel's entry. \\
 The banner repeats forever & A trap before \code{stvec} was set, or a call on OpenSBI's \code{sp} & Set \code{stvec} and \code{sp} first in \code{boot.S}. \\
 \code{ebreak} or \code{ecall} loops, or an instruction is skipped & \code{sepc} not advanced, or by 4 over a 2-byte \code{c.ebreak} & \code{ecall}: +4 before dispatching; \code{ebreak}: low bits \code{11} mean 4 bytes. \\
 Load page fault in \code{copy_from_user} & \code{sstatus}.SUM clear & Set SUM in \code{arch_uaccess_begin}, and make sure the copy runs between the two hooks. \\
@@ -908,7 +907,7 @@ The virtio probe sees version 1 & The legacy interface & \code{-global virtio-mm
 Corruption near \code{0x80000000} & OpenSBI's memory given out as free & Reserve \code{/reserved-memory} and the FDT. \\
 \end{pitfalls}
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[Merhaba, RISC-V]
 \begin{checklist}
@@ -921,8 +920,8 @@ Corruption near \code{0x80000000} & OpenSBI's memory given out as free & Reserve
   \item \code{make ARCH=riscv32 test} passes, \code{make ARCH=i386 test} still passes, the evil programs and the
     fuzzer pass on RV32 in CI, and an hour of fuzzing ends without a panic.
   \item A TurkFS image written by Turk-OS on RISC-V passes \code{fsck.minix -f} on the host.
-  \item \code{docs/porting.md} records the board, every leak you fixed, and the benchmarks beside x86.
-  \item (Optional) The Timur-RV32IMC table is filled in, and your SBI shim boots the kernel in QEMU.
+  \item \code{docs/porting.md} records the board, every leak fixed, and the benchmarks beside x86.
+  \item (Optional) The Timur-RV32IMC table is filled in, and the SBI shim boots the kernel in QEMU.
 \end{checklist}
 \end{milestonebox}
 
@@ -937,7 +936,7 @@ Corruption near \code{0x80000000} & OpenSBI's memory given out as free & Reserve
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 
 Port to \textbf{RV64} with Sv39, like xv6. Start more harts with the SBI \textbf{HSM} extension and make the scheduler
 SMP-safe. Use \textbf{Sstc} (\code{stimecmp}, which QEMU's hart has) to drop the SBI call from every tick. Add global

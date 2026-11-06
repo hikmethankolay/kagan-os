@@ -2,7 +2,7 @@
 \usepackage{turkos}
 
 \begin{document}
-\phaseheader{7}{Kernel Heap and Core Data Structures}{Give the kernel malloc and free, a reusable linked list, and an automated test run that guards everything you have built so far}{42}{48}
+\phaseheader{7}{Kernel Heap and Core Data Structures}{Give the kernel malloc and free, a reusable linked list, and an automated test run that guards every earlier phase}{42}{48}
 
 \ataglance{2 weeks}{3}{Phase 6: paging, the direct map, the VMM, pre-allocated kernel page tables}{Whole-page allocation
 through the direct map, a growable kernel heap with \code{kmalloc}, \code{kfree}, \code{kcalloc} and \code{krealloc}
@@ -10,23 +10,23 @@ through the direct map, a growable kernel heap with \code{kmalloc}, \code{kfree}
 linked list, and \code{make test}, which
 boots a headless QEMU, runs every test and exits with pass or fail.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
-The next phases create objects whose number and size you can't know in advance: a task structure for every thread,
+The next phases create objects whose number and size cannot be known in advance: a task structure for every thread,
 a file object for every \code{open}, a buffer for every disk block, a copy of every path name. They need a general
 allocator, and the PMM only hands out whole 4\,KiB frames. The kernel heap sits on top of the PMM and the VMM and
 cuts pages into objects of any size.
 
-Writing an allocator is also the best practice you can get for the kind of code that fills a kernel: pointer
+An allocator is also representative of the code that fills a kernel: pointer
 arithmetic, invariants that must hold after every operation, and bugs that show up far from where they were made.
 That is why this phase also builds the automated test run. From now on, one command boots Turk-OS without a window,
-runs every test, and tells you in seconds whether today's change broke something from three phases ago.
+runs every test, and reports in seconds whether today's change broke something from three phases ago.
 
-\section{Concepts you need}
+\section{Background}
 
 \subsection{Free-space management}
 
-\OSTEP chapter 17 is the core reading. An allocator manages a region as a sequence of \textbf{blocks}, each with a
+\OSTEP chapter 17 covers the design. An allocator manages a region as a sequence of \textbf{blocks}, each with a
 small \textbf{header} in front of the memory it hands out. The header records the block's size and whether it is
 free, so \code{kfree(p)} can find it from the pointer alone by stepping back one header. To allocate, the allocator
 searches the free blocks for one that is large enough, according to a \textbf{strategy}: first fit (the first one
@@ -67,7 +67,7 @@ system} manages power-of-two blocks that can split in half and merge back cheapl
 cache of ready-made objects of one type (say, every \code{struct task}), which avoids fragmentation and
 re-initialisation. Turk-OS uses a simple layered scheme that is easy to get right and easy to replace later. Whole
 pages come straight from the PMM through the direct map: \code{kalloc_page()} is just \code{P2V(pmm_alloc_frame())},
-and it gives you page-aligned memory for page tables and similar structures. Everything smaller comes from the heap,
+and it provides page-aligned memory for page tables and similar structures. Everything smaller comes from the heap,
 a first-fit list in the virtual region \code{0xE0000000}--\code{0xEFFFFFFF} that grows by mapping new frames as needed.
 
 \subsection{Intrusive lists}
@@ -84,35 +84,35 @@ in general.
 QEMU has a tiny virtual device made for testing, \code{isa-debug-exit}. When the guest writes a value $v$ to its I/O
 port, QEMU exits immediately with status $2v + 1$. A kernel started with a \code{test} command line can run every
 test, print the results on the serial port, and write 0 (exit status 1, meaning success) or 1 (status 3, failure) to
-the port. A Makefile target turns that into an ordinary pass or fail, which you can run before every commit.
+the port. A Makefile target turns that into an ordinary pass or fail, suitable as a check before every commit.
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
-\must & \OSTEP & Ch.~17 \emph{Free-Space Management} (re-read with the implementation in mind: headers, free list, splitting, coalescing, strategies, segregated lists, buddy) & 161--178 & The design of Tasks 7.2--7.4. \\
-\must & \OSTEP & Ch.~14 \emph{Interlude: Memory API} & 123--134 & Every bug in its list is something your heap must detect. \\
+\must & \OSTEP & Ch.~17 \emph{Free-Space Management} (headers, free list, splitting, coalescing, strategies, segregated lists, buddy) & 161--178 & The design of Tasks 7.2--7.4. \\
+\must & \OSTEP & Ch.~14 \emph{Interlude: Memory API} & 123--134 & Every bug in its list is one the heap must detect. \\
 \must & \LOB & Ch.~10, section \emph{A Kernel Heap} & 63 & Short, and points to the same options. \\
 \should & \OSC & \S10.8 \emph{Allocating Kernel Memory} (buddy system, slab allocation) & 426--430 & What production kernels do, and why. \\
 \should & \OSC & \S1.9 \emph{Kernel Data Structures} & 36--40 & Lists, queues, trees, hash maps, bitmaps in kernels. \\
 \could & \MOS & \S3.2.3 \emph{Managing Free Memory} & 190--194 & First, next, best, worst and quick fit compared. \\
-\could & \MOS & \S1.8.3 \emph{Large Programming Projects} & 75--76 & Your source tree is growing; organise headers and objects now. \\
+\could & \MOS & \S1.8.3 \emph{Large Programming Projects} & 75--76 & Organising headers and objects in a growing source tree. \\
 \must & \LKD & Ch.~12, \emph{kmalloc()}, \emph{vmalloc()}, \emph{Slab Layer} & 238--251 & The design behind Task~7.8's slab caches. \\
 \should & \LKP & Ch.~8, \emph{Understanding and using the kernel slab allocator} & 411--442 & Object caching and the real \code{kmalloc} size classes. \\
 \could & \LKP & Ch.~9, \emph{Creating a custom slab cache} and \emph{Memory allocation in the kernel -- which APIs to use when} & 444--461, 477--482 & Choosing between page, slab and \code{vmalloc} allocations. \\
-\should & \LKD & Ch.~6, \emph{Linked Lists} & 85--96 & Linux's \code{list_head}, the model for your intrusive list. \\
+\should & \LKD & Ch.~6, \emph{Linked Lists} & 85--96 & Linux's \code{list_head}, the model for the Turk-OS intrusive list. \\
 \end{readingplan}
 
 \begin{minixbox}
 The MINIX 3 kernel has no heap at all. Every table has a fixed size chosen at compile time: the process table is the
 array \code{proc[NR_TASKS + NR_PROCS]} declared in \texttt{kernel/proc.h (05500)}, and \texttt{kernel/table.c
 (06000)} holds other static tables. That makes memory use predictable and removes a whole class of allocator bugs, at
-the price of hard limits on processes, open files and so on. Turk-OS takes the other road, but you could still use
-fixed tables for some objects. Think about which one you would choose for the process table, and why.
+the price of hard limits on processes, open files and so on. Turk-OS takes the other road, but fixed tables remain an
+option for some objects; the process table is the natural candidate to weigh.
 
-\par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux's \code{kmalloc} has no general free list. It rounds every request up to one of a set of slab caches (\code{kmalloc-8} up to a few pages), takes larger requests straight from the page allocator, and uses \code{vmalloc} for large areas that only need to be virtually contiguous. Task~7.8 takes you from your first-fit heap to the same design.
+\par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux's \code{kmalloc} has no general free list. It rounds every request up to one of a set of slab caches (\code{kmalloc-8} up to a few pages), takes larger requests straight from the page allocator, and uses \code{vmalloc} for large areas that only need to be virtually contiguous. Task~7.8 moves the Turk-OS first-fit heap to the same design.
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{Whole pages from the direct map}
 Add \code{kalloc_page()} and \code{kfree_page()}. Because the direct map covers all usable RAM, a frame from the PMM
@@ -244,7 +244,7 @@ to check the remaining values and their order.}
 \task{make test}
 Add \code{outl} to \code{io.h}. In \code{kmain}, look at the Multiboot command line: if it contains \code{test}, run
 the whole suite, print a summary on serial, and exit QEMU through \code{isa-debug-exit}. Then add the Makefile target.
-A timeout protects you from a test that hangs.
+A timeout guards against a test that hangs.
 
 \begin{lst}{c}{kernel/kmain.c (test mode)}
 static inline void qemu_exit(uint32_t v) { outl(0xF4, v); }   /* QEMU exits with 2v+1 */
@@ -276,7 +276,7 @@ free everything and check that bytes in use is zero and that the heap is one fre
 \verify{The stress test passes, is deterministic for a given seed, and is part of \code{make test}.}
 
 \task{Slab caches under kmalloc}
-Your first-fit heap taught you splitting, coalescing and fragmentation, and it stays. But a kernel allocates the same
+The first-fit heap stays. But a kernel allocates the same
 few object sizes over and over: tasks, inodes, buffers, list nodes. Linux therefore serves almost every
 \code{kmalloc} from \textbf{slab caches} (\LKD ch.~12, \LKP ch.~8): a cache owns whole pages and cuts them into equal
 objects kept on a free list, so allocating and freeing take constant time and never fragment the heap.
@@ -324,13 +324,13 @@ collide. The system call layer of Phase~10 then passes the same negative codes s
 \end{tipbox}
 
 \task{Test every push}
-A test suite that you run only when you remember is half a test suite. Now that \code{make test} exists, let a
-continuous integration service run it on every push. Any Git-based CI works; the GitHub Actions workflow below is
+A test suite that runs only on demand is easily skipped. With \code{make test} in place, a
+continuous integration service runs it on every push. Any Git-based CI works; the GitHub Actions workflow below is
 short. Each run does three things: the \code{-Werror} build, the Phase~0 host tests of \code{lib/} under the address
 and undefined-behaviour sanitizers (put that command into a \code{host-test} target), and \code{make test} in headless
 QEMU with its 120\,s timeout. Building GCC on every run takes too long, so cache the built cross compiler under a key
 derived from \code{docs/toolchain.lock}: the cache is rebuilt exactly when the recorded versions change. Put the
-Phase~0 build commands into \code{tools/build-toolchain.sh} so the CI runs the same steps you did.
+Phase~0 build commands into \code{tools/build-toolchain.sh} so the CI runs the same steps as a local build.
 
 \begin{lst}{plain}{.github/workflows/ci.yml}
 name: ci
@@ -404,7 +404,7 @@ $N$ from 1 to the number of allocations in the suite, no test panics and the hea
 \section{Testing and debugging}
 
 \begin{pitfalls}
-\code{ASSERT(b->magic == HEAP_MAGIC)} fails in \code{kfree} & A buffer overflow in the previous block overwrote this header, or a pointer that didn't come from \code{kmalloc} was freed & Print the neighbouring headers; check the caller's sizes. Red zones (Going further) pinpoint the overflow. \\
+\code{ASSERT(b->magic == HEAP_MAGIC)} fails in \code{kfree} & A buffer overflow in the previous block overwrote this header, or a pointer that didn't come from \code{kmalloc} was freed & Print the neighbouring headers; check the caller's sizes. Red zones (Extensions) pinpoint the overflow. \\
 Returned pointers are not 16-byte aligned & The header size, or a split size, is not a multiple of 16 & Keep the \code{_Static_assert}; round the split size up. \\
 The heap keeps growing although usage is flat & Coalescing misses a case, so blocks fragment & \code{heap_check()} asserting ``no two adjacent free blocks'' finds it. \\
 List corruption after removing a block & A \code{prev} pointer not updated in split or coalesce & Assert \code{b->next->prev == b} in \code{heap_check()}. \\
@@ -419,7 +419,7 @@ an interrupt that arrives while the heap lock is held would deadlock if its hand
 Interrupt handlers should use memory allocated in advance.
 \end{warnbox}
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[The kernel can allocate]
 \begin{checklist}
@@ -445,7 +445,7 @@ Interrupt handlers should use memory allocated in advance.
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 
 Add a debug mode with \textbf{red zones}: a few guard bytes with a known value after each allocation, checked on
 \code{kfree}, which pinpoints overflows. Fill freed memory with \code{0xDEADBEEF} so use-after-free shows up as

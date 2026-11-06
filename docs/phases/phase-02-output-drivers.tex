@@ -2,25 +2,25 @@
 \usepackage{turkos}
 
 \begin{document}
-\phaseheader{2}{Getting to C: Screen, Serial and kprintf}{Give the kernel a stack, jump into C, and build the two output channels you will debug with for the rest of the project}{10}{16}
+\phaseheader{2}{Getting to C: Screen, Serial and kprintf}{Give the kernel a stack, jump into C, and build the two output channels used for debugging for the rest of the project}{10}{16}
 
 \ataglance{1--2 weeks}{2}{Phase 1: a Multiboot kernel that boots, a Makefile, GDB workflow}{A kernel written mostly in C that
 prints a coloured banner and the machine's memory size on the VGA text screen, mirrors every message to the serial
-port (so it appears in your terminal), and has \code{kprintf}, \code{panic} and \code{ASSERT}.}
+port (so it appears in the host terminal), and has \code{kprintf}, \code{panic} and \code{ASSERT}.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
 From now on, most of Turk-OS is written in C. Getting there takes one small piece of assembly (a stack) and a few
-compiler flags. Right after that comes the most important debugging tool you will build: a way to print. With no
-operating system under you, \code{printf} does not exist, so you will write the drivers it would normally sit on.
+compiler flags. Right after that comes the most important debugging tool in the kernel: a way to print. With no
+operating system underneath, \code{printf} does not exist, so this phase writes the drivers it would normally sit on.
 
-You will build two output channels. The \textbf{VGA text screen} is what a user sees. The \textbf{serial port} is
-what a developer needs: QEMU can redirect it to your terminal or a log file, where messages can be scrolled back,
-searched, and kept after a crash. When something goes wrong in Phase 6 or Phase 8, the serial log is usually your
+The phase builds two output channels. The \textbf{VGA text screen} is what a user sees. The \textbf{serial port} is
+what a developer needs: QEMU can redirect it to a terminal or a log file, where messages can be scrolled back,
+searched, and kept after a crash. When something goes wrong in Phase 6 or Phase 8, the serial log is usually the
 only witness. Both drivers also introduce the two ways a CPU talks to devices, memory-mapped I/O and port I/O, which
-you will use in every driver from here on.
+every later driver uses.
 
-\section{Concepts you need}
+\section{Background}
 
 \subsection{What C needs before \texorpdfstring{\code{kmain}}{kmain} can run}
 
@@ -28,15 +28,15 @@ A C function expects three things from its environment. It expects a \textbf{val
 pushes a return address and locals live there; Multiboot leaves ESP undefined, so the loader must reserve memory for
 a stack and point ESP at its top. It expects \textbf{zeroed \code{.bss}}, because the C standard says globals without
 an initialiser start at zero; GRUB and QEMU load ELF kernels by their program headers and zero-fill the part of each
-segment beyond the file contents, so \code{.bss} is handled for you, but it is worth confirming once in GDB. And it
+segment beyond the file contents, so \code{.bss} is handled by the loader, but it is worth confirming once in GDB. And it
 expects \textbf{the calling convention}: arguments on the stack, so the loader can pass the Multiboot magic and
 information pointer to \code{kmain} by pushing them.
 
 \subsection{Two ways to talk to a device}
 
 \textbf{Memory-mapped I/O} places a device's memory or registers at ordinary physical addresses. The VGA text buffer
-lives at \code{0xB8000}: write a byte there and a character appears on screen. You use normal pointer accesses,
-marked \code{volatile} so the compiler can't optimise them away. \textbf{Port-mapped I/O} uses a separate 64\,K
+lives at \code{0xB8000}: write a byte there and a character appears on screen. Access uses normal pointer operations,
+marked \code{volatile} so the compiler cannot optimise them away. \textbf{Port-mapped I/O} uses a separate 64\,K
 address space reachable only through the \code{in} and \code{out} instructions. The VGA cursor and the serial port
 are controlled this way. \MOS\,\S5.1.3 compares the two designs and explains why x86 has both.
 
@@ -45,7 +45,7 @@ are controlled this way. \MOS\,\S5.1.3 compares the two designs and explains why
 In text mode the screen is 80 columns by 25 rows. Each cell is two bytes: the character (in code page 437, which
 extends ASCII) and an attribute byte whose low four bits are the foreground colour and whose high four bits are the
 background (Figure~\ref{fig:vgacell}). Cell $(row, col)$ is at index $row \times 80 + col$. The blinking hardware
-cursor is separate: you position it by writing a 16-bit cell index to the CRT controller through ports
+cursor is separate: it is positioned by writing a 16-bit cell index to the CRT controller through ports
 \code{0x3D4} (register select) and \code{0x3D5} (data), register 14 for the high byte and 15 for the low byte.
 
 \begin{figure}[htbp]
@@ -71,14 +71,14 @@ cursor is separate: you position it by writing a 16-bit cell index to the CRT co
 \subsection{The serial port}
 
 A PC's first serial port (COM1) is a 16550-compatible UART with its registers at I/O ports \code{0x3F8}--\code{0x3FF}.
-You initialise it once, choosing the speed with a divisor of its 115\,200\,Hz base clock and the frame format
+It is initialised once, choosing the speed with a divisor of its 115\,200\,Hz base clock and the frame format
 (8 data bits, no parity, one stop bit, known as ``8N1''). After that, sending a byte means waiting until the
 \emph{line status} register says the transmitter is empty, then writing the byte to the data port. QEMU's
-\code{-serial stdio} connects this port to your terminal.
+\code{-serial stdio} connects this port to the host terminal.
 
 \subsection{A console abstraction and kprintf}
 
-Rather than making every function choose where to print, write one \code{kprintf} that formats a string and hands
+Rather than making every function choose where to print, a single \code{kprintf} that formats a string and hands
 each character to a small console layer, which forwards it to every registered output (Figure~\ref{fig:console}).
 Formatting uses \texttt{stdarg.h}, which is available in freestanding mode because it is implemented by the compiler
 itself.
@@ -97,12 +97,12 @@ itself.
 \label{fig:console}
 \end{figure}
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
 \must & \LOB & Ch.~3 \emph{Getting to C}: stack, calling C from assembly, packing structs, compiling C, build tools & 19--22 & Tasks 2.1--2.3 almost step by step. \\
 \must & \LOB & Ch.~4 \emph{Output}: framebuffer, cursor, serial port, configuring the line, buffers and modem & 23--31 & The two drivers of this phase. \\
-\must & \OSTEP & Ch.~36 \emph{I/O Devices} (\S36.1--36.7: canonical device, protocol, interrupts, DMA, device interaction, drivers) & 405--412 & The mental model for every driver you will write. \\
+\must & \OSTEP & Ch.~36 \emph{I/O Devices} (\S36.1--36.7: canonical device, protocol, interrupts, DMA, device interaction, drivers) & 405--412 & The device model behind every Turk-OS driver. \\
 \should & \MOS & \S5.1 \emph{Principles of I/O Hardware}, especially \S5.1.3 \emph{Memory-Mapped I/O} & 337--351 & Why x86 has both port and memory-mapped I/O. \\
 \should & \MOS & \S5.6.2 \emph{Output Software} (text windows, escape sequences) & 399--405 & How a text console turns bytes into a screen. \\
 \should & \OSDI & \S3.8.6 \emph{Implementation of the Display Driver} & 357--366 & MINIX writing to video memory and scrolling. \\
@@ -114,18 +114,18 @@ itself.
 \begin{minixbox}
 Open \texttt{drivers/tty/console.c (15900)} in \OSDI. MINIX keeps a per-console struct with the cursor position and
 the video memory address, and it scrolls either by copying memory or by moving the hardware's display start.
-Compare its \code{out_char} and \code{scroll_screen} with what you write in Task~2.5. Notice that the MINIX console
+Its \code{out_char} and \code{scroll_screen} correspond to Task~2.5. The MINIX console
 driver runs as a separate process and receives characters in messages; in Turk-OS it is an ordinary function call.
 
 \par\smallskip\textbf{Linux, for comparison.} \LKP Linux's \code{printk} does not write to the screen directly. It appends every message, tagged with a log level, to a ring buffer in memory; console drivers drain the buffer, and \code{dmesg} reads it back long after the screen has scrolled. Task~2.7 copies that design.
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{Give the loader a stack and call C}
 Reserve 16\,KiB in \code{.bss}, point ESP at its top (the stack grows down), push the two Multiboot values in
 reverse order and call \code{kmain}. Also set bit 1 of the Multiboot flags so GRUB fills in the memory size fields,
-and bit 0 so boot modules are page-aligned (you will use modules in Phase 10).
+and bit 0 so boot modules are page-aligned (modules are used in Phase 10).
 
 \begin{lst}{asm}{boot/loader.s}
 global loader
@@ -185,12 +185,12 @@ Extend the Makefile with a C rule. The flags say: freestanding (no hosted librar
 treated as errors, debug info for GDB, and keep frame pointers for backtraces in Phase 3. Link through \code{gcc} so
 that \code{libgcc} is available; GCC sometimes emits calls into it (64-bit division, for example).
 
-The extra warnings each close one class of bug while the kernel is still small enough to fix every warning in an
-evening. \code{-Wformat=2} checks every format string against its arguments, \code{-Wshadow} catches a local that
+The extra warnings each close one class of bug while the kernel is still small enough to fix every warning
+cheaply. \code{-Wformat=2} checks every format string against its arguments, \code{-Wshadow} catches a local that
 hides a global of the same name, \code{-Wvla} forbids variable-length arrays (a length from outside can push one
 past the end of a 16\,KiB kernel stack), and \code{-Wstrict-prototypes} rejects \code{void f()}, which in C means
-``any arguments'' rather than ``none''. \code{-Werror} makes them stick: a warning you may ignore is one you will
-ignore.
+``any arguments'' rather than ``none''. \code{-Werror} makes them stick: a warning that may be ignored will be
+ignored.
 
 \begin{lst}{make}{Makefile (additions)}
 CC      := i686-elf-gcc
@@ -213,9 +213,9 @@ run: $(BUILD)/kernel.elf
 
 \task{Port I/O helpers}
 C has no way to express \code{in} and \code{out}, so wrap them. \LOB writes them as separate assembly functions,
-which is a good exercise in cdecl (the port is at \code{[esp+4]}, the value at \code{[esp+8]}). Most kernels use GCC
-inline assembly instead, which avoids a function call per port access. Write the assembly version first to
-practise, then switch to this header:
+which exercises cdecl directly (the port is at \code{[esp+4]}, the value at \code{[esp+8]}). Most kernels use GCC
+inline assembly instead, which avoids a function call per port access. Write the assembly version first as
+a cdecl check, then switch to this header:
 
 \begin{lst}{c}{include/io.h}
 #pragma once
@@ -294,7 +294,7 @@ void serial_putc(char c)
     outb(COM1, (uint8_t)c);
 }
 \end{lst}
-\verify{With \code{make run} (which passes \code{-serial stdio}), text you send to the serial port appears in your
+\verify{With \code{make run} (which passes \code{-serial stdio}), text sent to the serial port appears in the host
 terminal. Also try \code{-serial file:build/serial.log}.}
 
 \begin{tipbox}[Portability note]
@@ -312,8 +312,8 @@ Write \code{lib/printf.c} with \code{kvprintf(void (*putc)(char), const char *fm
 \code{utoa} and \code{itoa} from Phase 0.
 
 Declare \code{kprintf} with GCC's \code{format} attribute. GCC then checks every call the way it checks
-\code{printf}: \texttt{kprintf("\%s", 42)} stops the build instead of printing memory at address 42. One surprise
-follows. On \code{i686-elf}, \code{uint32_t} is \code{unsigned long}, not \code{unsigned int}, so GCC wants
+\code{printf}: \texttt{kprintf("\%s", 42)} stops the build instead of printing memory at address 42. One consequence
+is easy to miss. On \code{i686-elf}, \code{uint32_t} is \code{unsigned long}, not \code{unsigned int}, so GCC wants
 \texttt{\%lx} and \texttt{\%lu} for it. Accept the \code{l} modifier in \code{kvprintf} and treat it like no modifier,
 since both types are 32 bits here.
 
@@ -354,7 +354,7 @@ void klog(int level, const char *fmt, ...)    /* always into log_buf, maybe to t
 #define pr_debug(fmt, ...) klog(LOG_DEBUG, pr_fmt(fmt), ##__VA_ARGS__)
 \end{lst}
 Make \code{log_buf} a 16\,KiB array of characters with a write index that wraps; storing the level and the uptime in
-front of each line is a good extension once the timer exists. Keep plain \code{kprintf} for the crash paths: \code{panic}
+front of each line is a natural extension once the timer exists. Keep plain \code{kprintf} for the crash paths: \code{panic}
 must print even if the log code is broken.
 \verify{Write a test that prints \code{0}, \code{-1}, \code{INT_MIN}, \code{0xFFFFFFFF} with \texttt{\%u} and \texttt{\%x},
 \texttt{\%08x} of \code{0xB8000}, a \code{NULL} string (print \code{(null)}), and \texttt{\%\%}. Compare with what the same
@@ -366,7 +366,7 @@ error. Remove the line again.}
 \task{panic and ASSERT}
 When the kernel detects something impossible, it must stop loudly instead of continuing with corrupt state.
 \code{panic} prints the message with file and line, disables interrupts and halts. \code{ASSERT} calls it when a
-condition is false. Use \code{ASSERT} generously from now on; it is the cheapest debugging tool you have.
+condition is false. Use \code{ASSERT} generously throughout the kernel; it is the cheapest debugging tool available.
 
 \begin{lst}{c}{include/panic.h}
 #pragma once
@@ -378,12 +378,12 @@ void panic_at(const char *file, int line, const char *fmt, ...)
     do { if (!(cond)) panic("assertion failed: %s", #cond); } while (0)
 \end{lst}
 
-\code{panic} is for broken invariants: states your own code should never reach. It is never the answer to bad
+\code{panic} is for broken invariants: states the kernel's own code should never reach. It is never the answer to bad
 input. A wrong argument from a caller, a full table or a failed allocation is an ordinary error, returned as a
 negative \code{errno} value such as \code{-EINVAL} or \code{-ENOMEM}. From Phase 10 on, a user program decides what
-reaches the kernel, and a kernel that panics on bad input lets any program switch it off. Write that policy down now,
+reaches the kernel, and a kernel that panics on bad input lets any program switch it off. Record that policy,
 together with a short list of coding rules taken from the SEI CERT C standard, as a second section of
-\code{docs/security/threat-model.md}. Each rule names its CERT identifier so you can look it up.
+\code{docs/security/threat-model.md}. Each rule names its CERT identifier for reference.
 
 \begin{lst}{plain}{docs/security/threat-model.md (second section)}
 ## Coding rules
@@ -428,13 +428,13 @@ struct multiboot_info {
     uint32_t mmap_addr;
 } __attribute__((packed));
 \end{lst}
-\verify{\code{qemu-system-i386 -kernel build/kernel.elf -serial stdio -m 128} reports roughly 127\,MiB. Change
-\code{-m} and watch the number follow.}
+\verify{\code{qemu-system-i386 -kernel build/kernel.elf -serial stdio -m 128} reports roughly 127\,MiB. Changing
+\code{-m} changes the reported number accordingly.}
 
 \section{Testing and debugging}
 
 From this phase on, run QEMU with \code{-serial stdio} every time and put a \code{kprintf} at each boot step
-(``GDT loaded'', ``paging on'', \dots). When the kernel dies, the last line in the log tells you where.
+(``GDT loaded'', ``paging on'', \dots). When the kernel dies, the last line in the log shows where.
 
 \begin{pitfalls}
 QEMU reboots in a loop right after \code{call kmain} & Stack not set, or ESP pointing at the wrong end of the reserved area & Run with \code{-d int,cpu_reset -no-reboot} to see the fault; check \code{esp} in GDB before the \code{call}. \\
@@ -447,13 +447,13 @@ Build fails: \texttt{\%x} \code{expects argument of type unsigned int} on a \cod
 Build fails: \code{function declaration isn't a prototype} & \code{-Wstrict-prototypes} and a declaration like \code{void vga_clear()} & Write \code{void vga_clear(void)}. \\
 \end{pitfalls}
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[The kernel can talk]
 \begin{checklist}
-  \item \code{kmain} runs on your own 16\,KiB stack and receives the Multiboot magic and information pointer.
+  \item \code{kmain} runs on the kernel's own 16\,KiB stack and receives the Multiboot magic and information pointer.
   \item The screen shows a coloured Turk-OS banner with the RAM size, and scrolling works.
-  \item The same messages appear in your terminal through the serial port.
+  \item The same messages appear in the host terminal through the serial port.
   \item \code{kprintf} passes the edge-case tests; \code{panic} and \code{ASSERT} print file and line and halt.
   \item The Makefile builds C and assembly, links with \code{libgcc}, and \code{make run} opens serial on stdio.
   \item The kernel builds without a single warning under \code{-Werror}, and a wrong format string stops the build.
@@ -472,13 +472,13 @@ Build fails: \code{function declaration isn't a prototype} & \code{-Wstrict-prot
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 
 Add log levels (\code{INFO}, \code{WARN}, \code{ERROR}) with different colours on screen and a prefix on serial. Keep
-a copy of every message in a ring buffer in memory; in Phase 4 you can add a \code{dmesg} command that prints it.
-Turkish letters are worth a look too: code page 437 contains ç, ö, ü, Ç, Ö and Ü but not ğ, ş, ı, İ, Ğ or Ş.
+a copy of every message in a ring buffer in memory; Phase 4 adds a \code{dmesg} command that prints it.
+Turkish letters need separate handling: code page 437 contains ç, ö, ü, Ç, Ö and Ü but not ğ, ş, ı, İ, Ğ or Ş.
 Write a small UTF-8 to CP437 converter for the letters that exist and substitute the rest for now. Phase 15
-offers two ways to get full Turkish text: a custom VGA font, or a graphical framebuffer with your own font.
+offers two ways to get full Turkish text: a custom VGA font, or a graphical framebuffer with a bundled font.
 
 \nextphase{3}{Segmentation, the IDT and CPU Exceptions}
 \booklegend

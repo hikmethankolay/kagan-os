@@ -2,7 +2,6 @@
 \usepackage{turkos}
 
 \begin{document}
-\renewcommand{\progresslabel}{Stage V progress toward Turk-OS 2.0 (this phase in red)}
 \phaseheader{16}{Portability: an Architecture Layer}{Find every place where x86 leaked into the generic kernel, hide the CPU and the board behind one interface, and prove that x86 still behaves exactly as before}{0}{20}
 
 \ataglance{2--3 weeks}{3}{Phase 15 complete: Turk-OS 1.0 tagged, \code{make test} and the fuzzer pass}{The same Turk-OS on x86,
@@ -11,7 +10,7 @@ accessors, \code{struct bootinfo} instead of Multiboot, the MMU behind \code{arc
 board can provide, \code{make ARCH=}, a 64-bit-clean generic core that compiles for \code{riscv32} and \code{aarch64},
 a devicetree parser with host tests, and two more cross compilers ready for Phases 17 and 18.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
 Turk-OS 1.0 is x86 from the first instruction to the last trap frame. Some of that is honest: \code{isr.s},
 \code{gdt.c} and \code{paging.c} live in \code{kernel/arch/i386} because they can't be anything but x86. Much of it
@@ -21,7 +20,7 @@ EFLAGS, and \code{kmain} ends a test run by writing to port \code{0xF4}. Each of
 a leak on a second machine.
 
 Stage V brings that second machine. Phase 17 ports Turk-OS to RISC-V (RV32 on QEMU's \code{virt} board, and optionally
-your own Timur-RV32IMC core), and Phase 18 to 64-bit ARM (AArch64 on QEMU's \code{virt} board, and optionally a
+on the Timur-RV32IMC soft core), and Phase 18 to 64-bit ARM (AArch64 on QEMU's \code{virt} board, and optionally a
 Raspberry Pi~4). This phase writes no RISC-V or ARM code. It is a refactoring: it prepares the seams, and at its end
 Turk-OS on x86 does exactly what version 1.0 did, with the same tests passing and benchmarks within a few per cent.
 
@@ -30,10 +29,10 @@ levels, traps, MMU, atomics. The \textbf{board}, or platform, is everything arou
 how the kernel learns what memory and devices exist. Everything else is \textbf{generic}. \MOS\,\S12.3.1 draws the
 same split as layers: hide the hardware first, then interrupts, context switching and the MMU, and above that the code
 is mostly machine independent. The heart of this phase is the \textbf{leak audit} of Task~16.2, a written list of
-every place where x86 shows through; every later task fixes entries on it. Stage V has its own progress scale, from 0
-to 100\,\% toward Turk-OS 2.0; this phase takes you to 20\,\%.
+every place where x86 shows through; every later task fixes entries on it.
+Stage V ends with Turk-OS 2.0 on three architectures.
 
-\section{Concepts you need}
+\section{Background}
 
 \subsection{Architecture, board and generic code}
 
@@ -235,7 +234,7 @@ size, \code{uint64_t} for physical addresses and lengths from the firmware, and 
 auditor is the compiler: build the generic code for a target with another data model, and it reports every truncation
 and format mismatch (Task~16.9).
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
 \must & \MOS & \S12.3.9 \emph{Useful Techniques}: \emph{Hiding the Hardware}, \emph{Indirection} & 1005--1008 & Conditional compilation, orthogonal macros, indirection. \\
@@ -245,7 +244,7 @@ and format mismatch (Task~16.9).
 \should & \MOS & \S12.3.1 \emph{System Structure} (layered systems, Fig.~12-2) & 993--997 & Where the hardware-dependent layers belong. \\
 \should & \OSDI & \S2.6.11 \emph{Hardware-Dependent Kernel Support} & 185--190 & How MINIX 3 kept x86-specific C code in a few files. \\
 \should & \OSC & \S9.6 \emph{Example: Intel 32- and 64-bit Architectures}; \S9.7 \emph{Example: ARMv8 Architecture} & 379--384 & A preview of the MMUs of Stage V. \\
-\could & \XVSIX & Ch.~1 \emph{Operating system interfaces}; ch.~2 \emph{Operating system organization} & -- & Meet xv6-riscv, Phase 17's reference kernel. \\
+\could & \XVSIX & Ch.~1 \emph{Operating system interfaces}; ch.~2 \emph{Operating system organization} & -- & Introduces xv6-riscv, Phase 17's reference kernel. \\
 \must & \LKD & Ch.~19, \emph{Portability} (word size, data types, alignment, byte order) & 379--394 & The chapter-length version of Task~16.9's checklist. \\
 \could & \LKP & Ch.~5, \emph{Cross-compiling a kernel module} & 204--216 & Cross toolchains from the Linux side. \\
 \end{readingplan}
@@ -253,7 +252,7 @@ and format mismatch (Task~16.9).
 For devicetree practice, the Linux kernel documentation page \emph{Linux and the Devicetree}
 (\url{https://docs.kernel.org/devicetree/usage-model.html}) explains how a kernel uses the tree at boot.
 
-\begin{minixbox}[Real-system lens: MINIX 3 on ARM, and Linux's arch/ tree]
+\begin{minixbox}[Prior art: MINIX 3 on ARM, and Linux's arch/ tree]
 The MINIX 3 of \OSDI (version 3.1) ran only on 32-bit x86, but \S2.6.11 explains that its hardware-dependent C code
 was kept in a few files (\code{exception.c}, \code{i8259.c}, \code{protect.c}) to make porting easier. MINIX 3.3.0
 (2014) was the first release with ARM support, for the BeagleBoard-xM and the BeagleBone (Cortex-A8, 32-bit ARMv7).
@@ -265,7 +264,7 @@ headers under \code{include/asm}, and \code{include/asm-generic} supplies a defa
 doesn't override.
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{Two more cross compilers, two QEMU boards, dtc and a multi-architecture GDB}
 Follow section~9 of \code{docs/setup.md}, \emph{Toolchains for the ports}. Section~9.2 installs the two emulators,
@@ -299,7 +298,7 @@ grep -rnE --include='*.[ch]' '\(uint32_t\) *[&a-z_]|uint32_t +[a-z_]*(addr|ptr|l
   kernel lib include | grep -v '^kernel/arch/i386/'
 \end{lst}
 
-Record each leak in \code{docs/porting.md}, a working document like the journal, with its kind: \textbf{arch} (a
+Record each leak in \code{docs/porting.md}, a working document like the engineering journal, with its kind: \textbf{arch} (a
 register, an instruction, the page-table format), \textbf{board} (a device, a firmware structure, a fixed address) or
 \textbf{word} size (a 32-bit type holding an address or a length), and the task that fixes it.
 
@@ -512,7 +511,7 @@ rewriting it. \code{kernel/syscall/uaccess.c} keeps \code{copy_from_user}, \code
 \code{VM_} flags, resolve lazy and copy-on-write pages through the same functions as \code{page_fault}, and still
 reject a write to a page without \code{VM_WRITE} or \code{VM_COW} with \code{-EFAULT}. The only machine-specific part
 is a pair of hooks around the copy itself, \code{arch_uaccess_begin()} and \code{arch_uaccess_end()} in
-\code{<arch/uaccess.h>}: empty on x86, or \code{stac} and \code{clac} if you enabled SMAP in Task~15.3. Phases 17 and
+\code{<arch/uaccess.h>}: empty on x86, or \code{stac} and \code{clac} when SMAP is enabled (Task~15.3). Phases 17 and
 18 fill them in for their own user-access switches. The evil programs go the same way: those that only pass bad
 arguments to system calls (\code{badptr}, \code{hugelen}, \code{ro_read}, \code{lazy_read}, \code{cow_read} and the
 rest) become plain C in \code{user/test/}, and the few that need a machine instruction or a kernel address
@@ -737,7 +736,7 @@ toolchain.
 
 \task{Prove that nothing broke}
 A refactoring is finished when the behaviour is provably the same. Run Phase~15's safety net against the new tree
-and compare with your v1.0 benchmark table.
+and compare with the v1.0 benchmark table.
 
 \begin{enumerate}
   \item \code{make clean && make ARCH=i386 test}: every ktest and user-space test passes.
@@ -763,7 +762,7 @@ RAM above 4\,GiB, or a large region, is missing or wrong on one target & A \code
 Benchmarks several per cent slower & Accessors became function calls, or \code{arch_switch} gained work & Look for \code{call} in \code{objdump -d}; keep hot helpers \code{static inline}. \\
 \end{pitfalls}
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[Portable core]
 \begin{checklist}
@@ -787,16 +786,16 @@ Benchmarks several per cent slower & Accessors became function calls, or \code{a
   \item What is the difference between the architecture and the board? Why does x86 keep both in one directory?
   \item Why are some parts of the interface inline headers and others functions in \code{include/arch.h}? What would
         happen to the null system call if \code{tf_arg} were a function?
-  \item Where in Turk-OS was an \texttt{\#ifdef} most tempting, and what did you do instead?
+  \item Where in Turk-OS is an \texttt{\#ifdef} most tempting, and what replaces it?
   \item The devicetree is big-endian, and all three targets are little-endian. What would go wrong without
-        \code{fdt_be32}, and how would you notice?
+        \code{fdt_be32}, and how would the failure show?
   \item Why can one TurkFS image work on all three targets, and which kinds of change to its structures would break
         that?
   \item Which subsystems needed no change at all, and what does that say about their design?
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 
 Add a fourth architecture that is not a machine: \code{kernel/arch/host} runs the generic kernel as a Linux process,
 with \code{mmap} standing in for page tables, so the ktests of the heap, the scheduler and TurkFS run in a second under

@@ -2,7 +2,6 @@
 \usepackage{turkos}
 
 \begin{document}
-\renewcommand{\progresslabel}{Stage V progress toward Turk-OS 2.0 (this phase in red)}
 \phaseheader{18}{The ARM Port}{Port Turk-OS to 64-bit ARM: exception levels, the GIC, a three-level MMU with two translation bases, a 64-bit clean kernel, and finally Turk-OS 2.0 on three architectures}{60}{100}
 
 \ataglance{5--6 weeks (the Raspberry Pi 4 in Task 18.12 is optional)}{5}{Phase 17 complete: the RISC-V port works, so the
@@ -11,32 +10,32 @@ passes}{Turk-OS on \code{qemu-system-aarch64 -machine virt} booting to \code{tsh
 the generic timer, the PL011 UART, the 39-bit VMSAv8-64 MMU with \code{TTBR0} and \code{TTBR1}, \code{svc} system
 calls, an ELF64 loader, virtio-blk, \code{make ARCH=aarch64 test}, and the v2.0 release for three architectures.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
-The RISC-V port proved that the architecture interface of Phase 16 can carry a second machine. But RV32 was kind to
-you: pointers were still 32 bits, the page tables still had two levels, and the kernel still lived at
+The RISC-V port proved that the architecture interface of Phase 16 can carry a second machine. RV32, however, kept much of
+x86's shape: pointers were still 32 bits, the page tables still had two levels, and the kernel still lived at
 \code{0xC0000000}. AArch64 changes everything at once. The instruction set is new, every register and every pointer
-is 64 bits wide, the MMU has three levels and two base registers, memory has types that you must choose, and the
-processor reorders memory accesses unless you tell it not to. If the interface survives this port, it is really
+is 64 bits wide, the MMU has three levels and two base registers, every mapping carries a memory type, and the
+processor reorders memory accesses unless barriers forbid it. If the interface survives this port, it is really
 generic.
 
-This is also the last phase of the plan. You will finish by building one TurkFS image that boots on three
-architectures, measuring the same benchmarks on all of them, writing down what porting taught you, and tagging
-Turk-OS 2.0. Expect the MMU (Task 18.6) to take the longest: an AArch64 MMU that is set up slightly wrong usually
+This is also the last phase of the roadmap. It ends with one TurkFS image that boots on three architectures, the
+same benchmarks measured on all of them, a written account of the port, and the Turk-OS 2.0 tag. The MMU
+(Task 18.6) is the riskiest part: an AArch64 MMU that is set up slightly wrong usually
 stops the machine without a word, just as x86 paging did in Phase 6.
 
-\section{Concepts you need}
+\section{Background}
 
 \subsection{AArch64 in one page}
 
 AArch64 has 31 general-purpose 64-bit registers, \code{x0} to \code{x30}. Each has a 32-bit view: \code{w5} is the low
 half of \code{x5}, and writing \code{w5} clears the upper half. Register number 31 means either the stack pointer
 \code{sp} or the zero register \code{xzr}, depending on the instruction. The program counter is not a general
-register: you change it only with branches. Every instruction is exactly 4 bytes. There is no \code{push} or
-\code{pop}; you move \code{sp} yourself and store pairs of registers with \code{stp} and \code{ldp}. \code{bl} puts
+register: only branches change it. Every instruction is exactly 4 bytes. There is no \code{push} or
+\code{pop}; code adjusts \code{sp} explicitly and stores pairs of registers with \code{stp} and \code{ldp}. \code{bl} puts
 the return address in \code{x30} (the link register) instead of on the stack, and \code{ret} jumps to it. The
 condition flags N, Z, C and V live in \code{PSTATE}, the processor state. Control registers are \textbf{system
-registers} with names like \code{VBAR_EL1}; you read them with \code{mrs} and write them with \code{msr}. The suffix
+registers} with names like \code{VBAR_EL1}, read with \code{mrs} and written with \code{msr}. The suffix
 names the lowest exception level allowed to use the register.
 
 The calling convention is the AAPCS64. Arguments go in \code{x0}--\code{x7} and the result comes back in \code{x0};
@@ -71,7 +70,7 @@ page table base & \code{CR3} & \code{satp} & \code{TTBR0_EL1} and \code{TTBR1_EL
 AArch64 replaces x86's rings and RISC-V's modes with four \textbf{exception levels} (Figure~\ref{fig:els}). EL0 runs
 programs, EL1 an operating system kernel, EL2 a hypervisor and EL3 the secure monitor firmware. An exception can only
 move execution to the same or a higher level, and \code{eret} is the only way down. Turk-OS runs at EL1 and its
-programs at EL0. QEMU's \code{virt} board has no EL2 or EL3 unless you ask for them, so by default the kernel starts
+programs at EL0. QEMU's \code{virt} board has no EL2 or EL3 unless requested, so by default the kernel starts
 at EL1; with \code{-machine virt,virtualization=on}, and on a Raspberry Pi 4, it starts at EL2 and must step down.
 
 \begin{figure}[htbp]
@@ -106,7 +105,7 @@ On every exception to EL1 the CPU saves the return address in \code{ELR_EL1} and
 \code{SP_EL1}, and jumps into the \textbf{vector table} that \code{VBAR_EL1} points to. For synchronous exceptions it
 also writes the reason into \code{ESR_EL1}, and for aborts the faulting address into \code{FAR_EL1}. \code{eret} reloads
 \code{PSTATE} from \code{SPSR_EL1} and the PC from \code{ELR_EL1}. Unlike x86, the CPU pushes nothing on any stack:
-saving registers is entirely your code's job.
+saving registers is entirely the kernel's job.
 
 The vector table is 2\,KiB long and must be 2\,KiB aligned. It has four groups of four entries, and each entry is
 0x80 bytes, room for 32 instructions (Figure~\ref{fig:vectors}). The group says where the exception came from; the
@@ -235,7 +234,7 @@ directory with the kernel.}
 
 This split removes a chore from x86 and RISC-V, where every new page directory needed copies of the kernel's
 entries. On AArch64 a process's level-1 table contains only user mappings, and \code{arch_mmu_switch} changes only
-\code{TTBR0_EL1}. Table~\ref{tab:pte} compares the leaf entries of the three MMUs you have now programmed.
+\code{TTBR0_EL1}. Table~\ref{tab:pte} compares the leaf entries of the three MMUs that Turk-OS programs.
 
 \begin{table}[htbp]
 \centering\small\renewcommand{\arraystretch}{1.2}
@@ -261,7 +260,7 @@ away, not to grant one.}
 
 \subsection{Memory types and barriers}
 
-On x86 and in QEMU's RISC-V board you never had to say what kind of memory an address was. On AArch64 every mapping
+On x86 and on QEMU's RISC-V board the kernel never states what kind of memory an address is. On AArch64 every mapping
 names a \textbf{memory type} through its AttrIndx field, which selects one of eight attribute bytes in
 \code{MAIR_EL1}. Turk-OS needs two. \textbf{Normal} memory (attribute \code{0xFF}: write-back cacheable) may be cached,
 read speculatively, and have its accesses merged and reordered: right for RAM, disastrous for a device, where a
@@ -286,19 +285,19 @@ learn which pages are in use, which is the information \OSTEP's clock algorithm 
 descriptor it writes; forgetting to do so is the classic first bug of an AArch64 MMU.
 \end{conceptbox}
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
-\must & \OSC & \S9.7 \emph{Example: ARMv8 Architecture} & 383--384 & Granules, levels and regions in two pages, after the IA-32 example you read in Phase 6. \\
+\must & \OSC & \S9.7 \emph{Example: ARMv8 Architecture} & 383--384 & Granules, levels and regions in two pages, after the IA-32 example of Phase 6. \\
 \must & \ARMDOC & \emph{Learn the architecture: AArch64 Exception Model} (exception levels, exception types, the vector table, handling and returning) & -- & Tasks 18.2, 18.4 and 18.9. \\
-\must & \ARMDOC & \emph{Learn the architecture: AArch64 memory management} (translation regimes, granules, TTBR0/TTBR1, \code{TCR_EL1}, TLB maintenance) & -- & Task 18.6, before you write a line of it. \\
+\must & \ARMDOC & \emph{Learn the architecture: AArch64 memory management} (translation regimes, granules, TTBR0/TTBR1, \code{TCR_EL1}, TLB maintenance) & -- & Prerequisite for Task 18.6. \\
 \should & \ARMDOC & \emph{Learn the architecture: AArch64 memory attributes and properties} & -- & Normal versus Device memory, shareability, MAIR. \\
 \should & \ARMDOC & \emph{Learn the architecture: Memory Systems, Ordering, and Barriers} & -- & What \code{dmb}, \code{dsb} and \code{isb} really guarantee. \\
 \should & \ARMDOC & \emph{Learn the architecture: Generic Timer} & -- & Counter, frequency, the timer registers (Task 18.5). \\
 \should & \ARMDOC & \emph{ARM Generic Interrupt Controller Architecture Specification}, version 2.0 (IHI~0048B), Ch.~4 \emph{Programmers' Model} & -- & The distributor and CPU interface registers of Task 18.5. \\
 \should & \SPEC & QEMU documentation, \emph{`virt' generic virtual platform} (Arm), especially \emph{Hardware configuration information for bare-metal programming} & -- & What the board guarantees and where it puts the devicetree (Task 18.1). \\
 \should & \ARMDOC & \emph{Semihosting for AArch32 and AArch64}: the trap instructions and \code{SYS_EXIT (0x18)} & -- & The test exit of Task 18.10. \\
-\should & \OSC & \S17.3 \emph{Protection Rings}, the ARM part (TrustZone, exception levels) & 669--671 & Why EL2 and EL3 exist above your kernel. \\
+\should & \OSC & \S17.3 \emph{Protection Rings}, the ARM part (TrustZone, exception levels) & 669--671 & Why EL2 and EL3 exist above the kernel. \\
 \should & \OSTEP & \S28.10 \emph{Load-Linked and Store-Conditional} & 311--312 & Exactly what \code{ldaxr}/\code{stlxr} do (Task 18.8). \\
 \should & \OSTEP & \S19.5 \emph{TLB Issue: Context Switches} & 200--202 & Flushing on every switch versus ASIDs, for \code{TTBR0_EL1}. \\
 \could & \ARMDOC & DDI~0487, the chapters \emph{The AArch64 System Level Programmers' Model} and \emph{The AArch64 Virtual Memory System Architecture} & -- & The authoritative answer when a guide is vague. \\
@@ -311,10 +310,10 @@ descriptor it writes; forgetting to do so is the classic first bug of an AArch64
 Keep Linux's \emph{Documentation/arch/arm64/booting.rst} at hand as well: it defines the Image header and the CPU
 state that QEMU and the Raspberry Pi firmware both produce for Task 18.2.
 
-\begin{minixbox}[Real-system lens: how Linux arm64 does it]
+\begin{minixbox}[Prior art: how Linux arm64 does it]
 Linux enters at \code{primary_entry} in \texttt{arch/arm64/kernel/head.S}, whose \code{init_kernel_el} drops from EL2
 to EL1 when the kernel does not stay there itself. \code{__cpu_setup} in \texttt{arch/arm64/mm/proc.S} computes
-\code{MAIR_EL1} and \code{TCR_EL1} much as your Task 18.6 does, before \code{head.S} turns the MMU on.
+\code{MAIR_EL1} and \code{TCR_EL1} much as Task 18.6 does, before \code{head.S} turns the MMU on.
 The vector table is \code{vectors} in \texttt{arch/arm64/kernel/entry.S}: sixteen uses of the \code{kernel_ventry}
 macro, each saving registers into a \code{struct pt_regs} and calling C handlers such as \code{el0t_64_sync_handler}
 in \texttt{entry-common.c}, which sends \code{svc} to \code{el0_svc}. For contrast, MINIX 3's ARM port
@@ -323,13 +322,13 @@ BeagleBone. Its \texttt{exc.S} has the old ARM vector table: eight single \code{
 exception type, instead of sixteen 128-byte slots.
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{Meet the board}
 QEMU's \code{virt} board for Arm is documented as having only two fixed addresses: flash at 0 and RAM at
 \code{0x40000000}. Everything else may move between QEMU versions, so the kernel finds it in the devicetree, as on
 RISC-V. Pass \code{-cpu cortex-a72}: without it QEMU emulates a 32-bit Cortex-A15. Ask for GICv2 explicitly too; it is
-the default today only because you use eight or fewer CPUs. Dump the devicetree (keep a copy in \code{tests/data/}
+the default today only because the board has eight or fewer CPUs. Dump the devicetree (keep a copy in \code{tests/data/}
 for the FDT tests of Task 16.10) and look at the memory map.
 
 \begin{lst}{sh}{terminal}
@@ -362,7 +361,7 @@ The Raspberry Pi firmware does the same, so Turk-OS uses the Linux protocol on b
 \verify{The decoded tree shows \code{memory@40000000} with 128\,MiB, \code{pl011@9000000} with
 \code{interrupts = <0x00 0x01 0x04>}, an \code{intc@8000000} compatible with \code{arm,cortex-a15-gic} (QEMU's name for a
 GICv2), a \code{timer} node with four PPIs, and 32 \code{virtio_mmio} nodes. Note in \code{docs/porting.md} which of
-them your code reads.}
+them the kernel reads.}
 
 \task{The first instructions}
 \code{boot.S} starts with the 64-byte \textbf{arm64 Image header}, which makes the raw binary bootable by QEMU and by
@@ -370,7 +369,7 @@ the Pi firmware. With \code{text_offset} 0, both load it 2\,MiB above a 2\,MiB-a
 \code{0x40200000} on QEMU. Then core 0 continues and any other core parks. On QEMU the other cores are not even
 running: they start powered off and wait for a PSCI \code{CPU_ON} call (a firmware call through \code{hvc} or
 \code{smc}) that Turk-OS never makes. On the Pi they wait in the firmware's spin loop. Checking \code{MPIDR_EL1} costs
-three instructions and protects you on any board.
+three instructions and is safe on any board.
 
 If \code{CurrentEL} says EL2, prepare EL1 and step down with \code{eret}: \code{HCR_EL2.RW} makes EL1 a 64-bit level,
 \code{CNTHCTL_EL2} lets EL1 use the timers, \code{SCTLR_EL1} gets a known value with the MMU off, and \code{SPSR_EL2}
@@ -528,7 +527,7 @@ void pl011_irq(struct trapframe *tf)
 }
 \end{lst}
 With the FIFO on, the receive interrupt fires when the FIFO reaches its trigger level, and the receive-timeout
-interrupt catches the last few characters of a burst; enable both. Until Task 18.5 you can poll \code{FR_RXFE}.
+interrupt catches the last few characters of a burst; enable both. Until Task 18.5, polling \code{FR_RXFE} is enough.
 \verify{\code{kmain} prints ``Merhaba from AArch64, EL1'' through the PL011, and \code{kprintf} works with
 \texttt{\%lx} for 64-bit values.}
 
@@ -617,9 +616,9 @@ static inline bool tf_from_user(const struct trapframe *tf) { return (tf->spsr &
 \end{lst}
 
 The C handler decodes the slot number and, for synchronous exceptions, the exception class of
-Table~\ref{tab:esr}. Give every class a name for the crash report, as you did for scause on RISC-V. Note the two
+Table~\ref{tab:esr}. Give every class a name for the crash report, as for scause on RISC-V. Note the two
 different return addresses: after \code{svc}, \code{ELR_EL1} already points to the next instruction (unlike RISC-V,
-where you added 4 to \code{sepc}); after \code{brk} and after a fault it points at the instruction itself.
+where the kernel adds 4 to \code{sepc}); after \code{brk} and after a fault it points at the instruction itself.
 
 \begin{lst}{c}{kernel/arch/aarch64/trap.c}
 enum { EC_UNKNOWN = 0x00, EC_FP_SIMD = 0x07, EC_SVC64 = 0x15, EC_IABT_LOW = 0x20,
@@ -663,8 +662,8 @@ unmapped address in a test shows ``data abort from EL1'' with the address from \
 \task{Interrupts and time}
 Find the GIC in the devicetree (\code{arm,cortex-a15-gic}, two \code{reg} ranges), configure the distributor, enable
 it and the CPU interface, and set the priority mask. Then route device interrupts by INTID through Phase 3's handler
-table, grown to the number of INTIDs the GIC reports. Phase 8's lesson still holds: write \code{GICC_EOIR} before you
-call a handler that may switch tasks. Until an interrupt is ended, the CPU interface blocks every interrupt of the same
+table, grown to the number of INTIDs the GIC reports. Phase 8's lesson still holds: write \code{GICC_EOIR} before
+calling a handler that may switch tasks. Until an interrupt is ended, the CPU interface blocks every interrupt of the same
 or lower priority, and preemption would stop.
 
 \begin{lst}{c}{kernel/arch/aarch64/gic.c}
@@ -711,8 +710,8 @@ void gic_handle_irq(struct trapframe *tf)
 }
 \end{lst}
 
-The timer reloads its down-counter on every tick. Its PPI is level-triggered: until you write \code{CNTV_TVAL_EL0}
-again, the interrupt stays asserted.
+The timer reloads its down-counter on every tick. Its PPI is level-triggered: until \code{CNTV_TVAL_EL0} is
+written again, the interrupt stays asserted.
 
 \begin{lst}{c}{kernel/arch/aarch64/timer.c}
 #define TIMER_INTID 27                  /* EL1 virtual timer, a PPI */
@@ -914,7 +913,7 @@ void arch_fault_info(const struct trapframe *tf, struct fault_info *fi)
 \end{lst}
 \verify{The kernel prints from its high-half address (\code{0xFFFFFF80402...} in a backtrace); the Phase 6 fault tests
 pass: a write to \code{.text} is a permission fault at level 3 (fault status \code{0x0F}), an unmapped address a
-translation fault (\code{0x04}--\code{0x07}, by the level where the walk stopped); and your own \code{pagetable}
+translation fault (\code{0x04}--\code{0x07}, by the level where the walk stopped); and the \code{pagetable}
 monitor command shows Device attributes only on device pages and \code{PXN} clear only on \code{.text}. With
 \code{-cpu max} and PAN on, a kernel read of a user pointer outside uaccess is a permission fault.}
 
@@ -1115,7 +1114,7 @@ Arm \textbf{semihosting}, a debugger interface: with \code{-semihosting-config e
 instruction \texttt{hlt \#0xf000} at EL1 becomes a request to QEMU, with the operation in \code{w0} and a parameter
 pointer in \code{x1}. \code{SYS_EXIT} (\code{0x18}) on AArch64 takes a two-word block; when its first word is
 \code{ADP_Stopped_ApplicationExit} (\code{0x20026}), QEMU exits with the second word as its exit status. User code
-cannot do this unless you also pass \code{userspace=on}, which you should not.
+cannot do this unless \code{userspace=on} is also passed, which Turk-OS never does.
 
 \begin{lst}{c}{kernel/arch/aarch64/semihost.c}
 _Noreturn void arch_test_exit(int failed)
@@ -1136,7 +1135,7 @@ test} prints every result and \code{ALL TESTS PASSED}, and breaking one test mak
 evil programs and a short fuzzer run green on all three architectures.}
 
 \task{Turk-OS 2.0}
-Now bring the three architectures together. TurkFS has no endianness or word-size problem: all three targets are
+Bring the three architectures together. TurkFS has no endianness or word-size problem: all three targets are
 little-endian and the on-disk format uses fixed-width fields, so one image must work everywhere. Prove it: create an
 image with \code{mkfs.minix -3}, write files on AArch64, check it with \code{fsck.minix -f}, boot the same file on
 riscv32 (virtio) and on i386 (ATA, \code{-drive if=ide}), and write from there too.
@@ -1151,8 +1150,8 @@ make ARCH=i386 run DISK=build/turkfs-2.0.img      # read both
 
 Run the Phase 15 benchmarks on all three and fill a table like the one below. \code{arch_cycles} counts different
 things on each machine (\code{rdtsc}, \code{rdtime}, \code{cntvct_el0}), so convert every result to nanoseconds with
-that counter's frequency, and remember that under QEMU you are comparing emulators, not processors. Explain the
-largest difference you find.
+that counter's frequency, and note that under QEMU the comparison is between emulators, not processors. Explain
+the largest difference.
 
 \begin{center}
 \small\renewcommand{\arraystretch}{1.2}
@@ -1170,7 +1169,7 @@ boot to the \code{tsh} prompt & & & \\
 \end{center}
 
 Then write: add a porting chapter to the Phase 15 design reflection (what leaked, what the interface looks like now,
-which port was hardest and why, what you would design differently from the start), update the architecture document
+which port was hardest and why, what would be designed differently from the start), update the architecture document
 with the AArch64 memory map and the \code{docs/porting.md} conclusions, and
 check that \code{make release-all} works from a clean clone. Tag the commit \code{v2.0}.
 \verify{The image passes \code{fsck.minix -f} after each of the three boots, and every architecture reads the files
@@ -1178,7 +1177,7 @@ the other two wrote. \code{make test} passes for \code{ARCH=i386}, \code{riscv32
 commit.}
 
 \task{Optional: Raspberry Pi 4}
-The Pi 4's Cortex-A72 is the CPU you have been emulating, so the kernel is the same; the board around it is not.
+The Pi 4's Cortex-A72 is the CPU that QEMU emulates here, so the kernel is the same; the board around it is not.
 Write the image to the FAT boot partition of an SD card that already holds the Raspberry Pi firmware, next to this
 \code{config.txt}. Leave the SD card itself alone: an SD driver is out of scope, so the root is the initrd.
 
@@ -1194,7 +1193,7 @@ initramfs initrd.tar followkernel
 On the Pi 4 the PL011 normally serves Bluetooth and the weaker mini UART is on the header pins; the
 \code{disable-bt} overlay puts the PL011 on GPIO 14 (pin 8, transmit) and GPIO 15 (pin 10, receive). Connect a
 3.3\,V USB serial adapter there and to a ground pin; never a 5\,V or RS-232 one. The firmware's stub starts core 0 at
-EL2 with \code{x0} pointing to the devicetree, which is why Task 18.2 already drops to EL1. Before you touch the card,
+EL2 with \code{x0} pointing to the devicetree, which is why Task 18.2 already drops to EL1. Before using the card,
 boot QEMU with \code{-machine virt,virtualization=on}, which also starts at EL2.
 
 \begin{center}
@@ -1246,7 +1245,7 @@ Pointers above 4\,GiB are corrupted & A 64-bit truncation: \code{uint32_t} or a 
 No output on the Raspberry Pi & PL011 not on the header pins, wrong UART clock, TX and RX swapped, or the EL2 path broken & Check \code{config.txt}; take the clock from the tree; test EL2 entry in QEMU first. \\
 \end{pitfalls}
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[Turk-OS 2.0: three architectures]
 \begin{checklist}
@@ -1267,19 +1266,19 @@ No output on the Raspberry Pi & PL011 not on the header pins, wrong UART clock, 
   \item x86 has one \code{CR3}; AArch64 has \code{TTBR0_EL1} and \code{TTBR1_EL1}. What does the second register save the kernel on every process creation and switch?
   \item What does the access flag let an operating system do, and why does Turk-OS set it everywhere?
   \item Why must device registers be mapped Device-nGnRnE? Describe one thing that would go wrong with Normal memory.
-  \item Where did 64 bits break Turk-OS despite Task 16.9, and why could the compiler not warn about it?
+  \item Where does 64-bit execution break Turk-OS despite Task 16.9, and why can the compiler not warn about it?
   \item Why do \code{ldaxr} and \code{stlxr} need the MMU and the caches on?
   \item After \code{svc}, the kernel does not add 4 to the return address; after \code{brk} it does. Why the difference, and how does RISC-V handle \code{ecall}?
   \item Why does AArch64 need no TSS and no \code{sscratch} to find the kernel stack?
-  \item Which of the two ports was the most work, and what does that tell you about the architecture interface?
+  \item Which of the two ports needs the most architecture-specific code, and what does that say about the architecture interface?
   \item How can one TurkFS image serve three architectures, and what change to the format would break that?
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 
 Bring up the other cores: PSCI \code{CPU_ON} (a firmware call through \code{hvc} on QEMU's default \code{virt}),
-per-CPU data in \code{TPIDR_EL1}, SGIs for rescheduling and TLB shootdown, and your Phase 9 spinlocks finally spinning
+per-CPU data in \code{TPIDR_EL1}, SGIs for rescheduling and TLB shootdown, and the Phase 9 spinlocks spinning
 on real contention. Move to GICv3 (\code{gic-version=3}), whose CPU interface is a set of system registers instead of
 MMIO. Give each process an ASID in the top bits of \code{TTBR0_EL1}, set \code{nG} on user pages, and stop flushing the
 whole TLB on every switch; measure the context-switch benchmark before and after. Try the 16\,KiB and 64\,KiB granules
@@ -1287,15 +1286,15 @@ and see how the walk changes. Run Turk-OS under KVM on an ARM machine. Port it t
 peripherals sit behind the RP1 chip and whose standard Linux kernel uses 16\,KiB pages. Or take Phase 15's Track D: now that the
 generic code is 64-bit clean, x86-64 is mostly a new \code{kernel/arch/x86_64}.
 
-\section{Closing}
+\section{Summary}
 
-Fourteen months ago Turk-OS was a boot sector that printed one line. Now one source tree builds a kernel and a
-userland for three processor architectures, two of which you met only in this stage, and the same disk image boots
-on all of them. Porting showed you which parts of your kernel were ideas and which were accidents of the PC: the
-scheduler, the file system and the system call layer did not change, while the code that knew about descriptors,
-rings and port I/O moved into one directory per machine. That separation, more than any single feature, is what makes
-an operating system last. Keep the journal, keep the tests green, and if Timur-RV32IMC runs your kernel one day,
-write it down.
+One source tree builds a kernel and a userland for three processor architectures, and the same disk image boots on
+all of them. The ports separate the parts of the kernel that are design from those that are accidents of the PC: the
+scheduler, the file system and the system call layer are unchanged, while the code that knows about descriptors,
+rings and port I/O lives in one directory per machine. That separation, more than any single feature, is what keeps
+an operating system portable. Further work is recorded in the engineering journal with the test suite green on every
+architecture; bring-up on the Timur-RV32IMC core (Task 17.13) and the Raspberry Pi~4 (Task 18.12) remain the open
+hardware targets.
 
 \booklegend
 \portlegend

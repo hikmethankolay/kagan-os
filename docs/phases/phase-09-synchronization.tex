@@ -10,7 +10,7 @@ counting semaphores and condition variables, a keyboard driver that blocks inste
 concurrency problems as kernel tests, a written lock-ordering rule checked at run time, and reference counts that
 cannot wrap.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
 Phase 8 introduced a new kind of bug. A task can now be interrupted between any two instructions, and another task
 or an interrupt handler can run and touch the same data. Before preemption, the kernel's lists and counters were
@@ -18,12 +18,12 @@ only changed by one flow of control at a time. Now the run queue, the heap's fre
 cursor and the keyboard buffer can all be modified halfway through an update, and the result is corruption that
 appears rarely, at random, and never under the debugger.
 
-This phase gives you the tools to prevent that, and the discipline to use them everywhere. It follows \OSTEP's
+This phase provides the primitives that prevent it and the rules for using them everywhere. It follows \OSTEP's
 second big idea, concurrency, closely: build locks from a hardware atomic instruction, then build sleeping primitives
-on top of the locks, then use them to solve the classic problems. You will also think about deadlock for the first
-time, because once code takes more than one lock, the order it takes them in starts to matter.
+on top of the locks, then use them to solve the classic problems. It also addresses deadlock,
+because once code takes more than one lock, the order it takes them in starts to matter.
 
-\section{Concepts you need}
+\section{Background}
 
 \subsection{Race conditions and critical sections}
 
@@ -66,8 +66,8 @@ code is already correct for the SMP track in Phase 15.
 
 A lock needs an operation that reads and writes memory in one indivisible step. On x86, \code{xchg} with a memory
 operand is always atomic: it swaps a register with memory while locking out other CPUs. That makes it a
-\textbf{test-and-set}: write 1 and get the old value back; if the old value was 0, you have the lock
-(\OSTEP\,\S28.7, \OSC\,\S6.4). GCC exposes it as \code{__atomic_exchange_n}. Other atomics you will meet are
+\textbf{test-and-set}: write 1 and get the old value back; if the old value was 0, the caller has the lock
+(\OSTEP\,\S28.7, \OSC\,\S6.4). GCC exposes it as \code{__atomic_exchange_n}. Other common atomics are
 compare-and-swap (\code{lock cmpxchg}) and fetch-and-add (\code{lock xadd}).
 
 \subsection{Sleeping instead of spinning}
@@ -76,7 +76,7 @@ Spinning wastes the CPU, and on one CPU it can never succeed while the holder is
 for something that may take a while (a key press, a disk block, a free slot in a buffer), it should \textbf{block}:
 go on a \textbf{wait queue}, let the scheduler run someone else, and be put back on the ready queue by whoever
 makes the condition true. Two rules make this correct. First, going to sleep must be atomic with respect to the
-wake-up, or you get the \textbf{lost wake-up} problem (\MOS\,\S2.3.4): the task checks the condition, the wake-up
+wake-up, or the result is the \textbf{lost wake-up} problem (\MOS\,\S2.3.4): the task checks the condition, the wake-up
 happens, and then the task sleeps forever. Second, a woken task must re-check its condition in a \code{while} loop,
 because by the time it runs, someone else may have taken what it was waiting for (\OSTEP chapter 30 calls this Mesa
 semantics).
@@ -100,7 +100,7 @@ with a global \textbf{lock order}: if every piece of code takes locks in the sam
 also names the ``ostrich algorithm'', ignoring the problem, and explains when that is a reasonable choice (for the
 kernel, it isn't).
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
 \must & \OSTEP & Ch.~26 \emph{Concurrency: An Introduction} & 273--288 & Races, critical sections, atomicity. \\
@@ -123,14 +123,14 @@ kernel, it isn't).
 The MINIX 3 kernel needs almost no locks: it is small, it is not preemptible, and it runs with interrupts disabled.
 Everything else (drivers, the file system, the process manager) runs as separate processes that cooperate through
 \textbf{synchronous message passing}: \code{send} blocks until the receiver calls \code{receive}, so every message is
-a rendezvous with no buffering (\OSDI\,\S2.2.8 and \S2.6.9). Read \code{mini_send} and \code{mini_receive} in
-\texttt{kernel/proc.c (07400)}. Notice the check that refuses a \code{send} which would close a cycle of processes
+a rendezvous with no buffering (\OSDI\,\S2.2.8 and \S2.6.9). \code{mini_send} and \code{mini_receive} in
+\texttt{kernel/proc.c (07400)} implement it, including a check that refuses a \code{send} which would close a cycle of processes
 sending to each other: deadlock detection built into the IPC primitive itself.
 
 \par\smallskip\textbf{Linux, for comparison.} \LKP Linux checks its lock order at run time: \textbf{lockdep} records which locks are held when another is taken and reports the first order violation, long before it deadlocks. It also replaced plain atomic counters for object lifetimes with \code{refcount_t}, which saturates instead of wrapping to zero. Tasks~9.8 and 9.9 bring both ideas to Turk-OS.
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{Interrupt control that nests}
 Replace every bare \code{cli}/\code{sti} with a pair that saves and restores the previous state. A function that
@@ -277,7 +277,7 @@ Add these to \code{make test}. Each one should run long enough (a few seconds) t
 \midrule
 \code{race_counter} & four tasks increment a shared counter 100\,000 times each. Without a lock the total comes out short; with a spinlock it is exactly 400\,000. To make the race visible on one CPU, widen the window between load and store with a short busy loop. \\
 \code{bounded_buffer} & three producers and three consumers share a 16-slot buffer, using semaphores for empty slots, full slots and mutual exclusion (\OSTEP chapter 31). Every item produced is consumed exactly once. \\
-\code{philosophers} & five tasks, five forks. Taking forks in a fixed global order (lowest number first) runs without deadlock; for the lesson, run a version without ordering once and watch it freeze. \\
+\code{philosophers} & five tasks, five forks. Taking forks in a fixed global order (lowest number first) runs without deadlock; a version without ordering, run once, freezes, which shows the test can detect deadlock. \\
 \code{cv_ping_pong} & two tasks alternate strictly using a mutex and a condition variable, 10\,000 rounds. \\
 \bottomrule
 \end{tabularx}
@@ -289,7 +289,7 @@ can see races. Remove the \code{spin_lock} before one call to the bounded buffer
 \code{ASSERT_HELD} fires on the first call.}
 
 \task{Audit the kernel and write the lock order}
-Go through every shared structure you have built and give it an owner. Write the result into a comment block in
+Go through every shared structure in the kernel and give it an owner. Write the result into a comment block in
 \code{include/locks.h} and follow it from now on. Locks are always taken from top to bottom in the table, never upward.
 
 \begin{center}
@@ -353,7 +353,7 @@ The table above is only a promise until something checks it. Linux's \textbf{loc
 acquisition and reports the first order violation, long before it turns into a deadlock that happens once a week.
 A much smaller version suffices for Turk-OS: give each lock a \textbf{rank} from the table, keep a small stack of the
 locks the CPU holds, and in debug builds panic when a lock is taken whose rank is not greater than the rank of the
-lock on top. Unlike lockdep, which learns the order from what it sees, yours enforces the order you wrote down.
+lock on top. Unlike lockdep, which learns the order from what it sees, the Turk-OS checker enforces the documented order.
 
 \begin{lst}{c}{kernel/sync/lockcheck.c (with LOCK_DEBUG)}
 static struct spinlock *held[16];
@@ -395,10 +395,10 @@ Deadlock when \code{kprintf} is called from an interrupt & The interrupted task 
 A task sleeps forever although the event happened & Lost wake-up: the condition was checked, then the wake-up came, then the task slept & Queue the task before releasing the lock, as \code{sleep_on} does. \\
 Consumers take items that aren't there & \code{if} instead of \code{while} around the wait & Always re-check the condition in a \code{while} loop. \\
 Interrupts stay off after some code path & An early \code{return} skipped \code{spin_unlock} or \code{irq_restore} & One exit path per locked function; assert IF at the top of the idle loop. \\
-Occasional hang under load & Two locks taken in opposite orders & Follow the lock order table; see Going further for automatic checking. \\
+Occasional hang under load & Two locks taken in opposite orders & Follow the lock order table; see Task~9.9 and Extensions for automatic checking. \\
 \end{pitfalls}
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[Safe concurrency]
 \begin{checklist}
@@ -424,13 +424,13 @@ Occasional hang under load & Two locks taken in opposite orders & Follow the loc
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 
 Build a small \emph{lock validator}: give each lock a class number, record the order in which each task acquires
 classes, and panic the first time an order inversion appears, even if it didn't deadlock that time. Linux's lockdep
 works this way. Implement reader-writer locks (\OSTEP chapter 31) for data that is read far more often than written.
 Or add MINIX-style synchronous messages (\code{send}, \code{receive}, \code{sendrec}) as a second IPC mechanism
-between kernel threads, and compare the code you write with each style.
+between kernel threads, and compare the code each style produces.
 
 \nextphase{10}{User Mode and System Calls}
 \booklegend

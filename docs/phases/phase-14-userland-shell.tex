@@ -10,20 +10,20 @@
 codes on the console, \code{tsh} (the Turk shell) with pipelines, redirection and background jobs, about fifteen core
 utilities, and a boot that ends at a shell prompt.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
-Until now you have been talking to Turk-OS through a monitor built into the kernel. A real UNIX has no such thing: the
+Up to this phase, Turk-OS is driven through a monitor built into the kernel. A real UNIX has no such thing: the
 shell is an ordinary user program, and so are \code{ls}, \code{cat} and everything else you type. That design is only
-possible because of the system calls you built in Phases 10--13, and this phase is where you find out whether they
-really work together. \OSTEP chapter 5 argues that \code{fork}, \code{exec}, \code{wait} and file descriptors are
-exactly the right primitives for a shell; now you get to confirm it by writing one.
+possible because of the system calls of Phases 10--13, and this phase tests whether they
+work together. \OSTEP chapter 5 argues that \code{fork}, \code{exec}, \code{wait} and file descriptors are
+exactly the right primitives for a shell; \code{tsh} puts that claim to the test.
 
 Most of the code in this phase runs in ring 3. The kernel gains two things: \textbf{pipes}, which connect one
 process's output to another's input, and a proper \textbf{terminal} that edits lines and turns Ctrl+C into a signal.
-Everything else is user space: a C library so programs can be written normally, the shell, and the utilities. When
-you finish, Turk-OS boots to a prompt, and you can type \code{ls /bin | wc -l > count.txt}.
+Everything else is user space: a C library so programs can be written normally, the shell, and the utilities. At the end of the
+phase, Turk-OS boots to a prompt that accepts \code{ls /bin | wc -l > count.txt}.
 
-\section{Concepts you need}
+\section{Background}
 
 \subsection{The C library}
 
@@ -31,7 +31,7 @@ User programs don't make system calls directly; they call the \textbf{C library}
 interface (\texttt{string.h}, \texttt{stdio.h}, \texttt{stdlib.h}, \texttt{unistd.h}, \dots) on top of system calls.
 Some functions are thin wrappers: \code{write} puts its arguments in registers and executes \code{int 0x80}. Others do
 real work in user space: \code{printf} formats into a buffer and calls \code{write} only when the buffer fills or a
-line ends, and \code{malloc} manages a heap that it grows with \code{brk}, reusing your Phase 7 allocator almost
+line ends, and \code{malloc} manages a heap that it grows with \code{brk}, reusing the Phase 7 allocator almost
 unchanged. System calls return a negative error code (\code{-ENOENT}); by convention the library stores the positive
 code in the global \code{errno} and returns $-1$, which is what programs expect.
 
@@ -74,7 +74,7 @@ screen) that let programs move the cursor and change colours.
 
 \subsection{Every layer at once}
 
-This is the phase where a single \texttt{printf("merhaba\textbackslash n")} passes through almost everything you have built
+This is the phase where a single \texttt{printf("merhaba\textbackslash n")} passes through almost every layer of Turk-OS
 (Figure~\ref{fig:layers}). When something prints the wrong thing, walk down this list and check each layer on its own.
 
 \begin{figure}[htbp]
@@ -92,12 +92,12 @@ This is the phase where a single \texttt{printf("merhaba\textbackslash n")} pass
 \label{fig:layers}
 \end{figure}
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
 \must & \OSTEP & Ch.~5 \emph{Interlude: Process API}; re-read \S5.4 on why \code{fork}/\code{exec} suits a shell, redirection and pipes & 37--48 & The design of \code{tsh} in a few pages. \\
 \must & \LOB & Ch.~11, sections \emph{Using C for User Mode Programs} and \emph{A C Library} & 67--68 & What a minimal libc needs. \\
-\should & \OSDI & \S1.3.3 \emph{The Shell}; \S1.4 \emph{System Calls} & 25--42 & The POSIX calls your library wraps, with a sketch of a shell. \\
+\should & \OSDI & \S1.3.3 \emph{The Shell}; \S1.4 \emph{System Calls} & 25--42 & The POSIX calls Turk-libc wraps, with a sketch of a shell. \\
 \should & \OSDI & \S5.6.9 \emph{Pipes and Special Files} & 563--565 & How MINIX implements pipes and device files. \\
 \should & \OSDI & \S3.8.2 \emph{Terminal Software}; \S3.8.4 \emph{Implementation of the Device-Independent Terminal Driver} & 307--316, 331--350 & Canonical mode, special characters, and a working line discipline. \\
 \should & \MOS & \S5.6.1--5.6.2 \emph{Input Software}, \emph{Output Software} & 394--405 & Cooked versus raw input, escape sequences. \\
@@ -112,19 +112,19 @@ The MINIX terminal driver, \texttt{drivers/tty/tty.c (13600)}, implements canoni
 checks every incoming character against the special characters in the terminal's settings (erase, kill, EOF,
 interrupt, \dots), edits the input queue, echoes, and completes a pending \code{read} when a line is ready. Pipes live
 in the file-system server, \texttt{servers/fs/pipe.c (25900)}: a pipe is an inode whose data blocks act as the
-buffer, and \code{suspend}/\code{release} put readers and writers to sleep and wake them, just as your wait queues
-will.
+buffer, and \code{suspend}/\code{release} put readers and writers to sleep and wake them, as the Turk-OS wait queues
+do.
 
 \par\smallskip\textbf{Linux, for comparison.} \LKD On Linux, the C library wraps every system call and turns a negative return value into $-1$ plus \code{errno}, exactly as Turk-libc does.
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{Turk-libc: the skeleton}
 Create \code{user/libc/} with headers in \code{user/include/}, built into a static \code{libc.a} with
 \code{i686-elf-ar}. Every program links \code{crt0.o}, its own objects and \code{libc.a}. Start with system call
 wrappers that follow the \code{errno} convention, then \texttt{string.h} and \texttt{ctype.h} (copy them from the
-kernel's \code{lib/}; you wrote them in Phase 0).
+kernel's \code{lib/}, written in Phase 0).
 
 \begin{lst}{c}{user/libc/unistd.c}
 int errno;
@@ -310,7 +310,7 @@ lines and compares their output with expected text. Put these cases in \code{mak
 \task{Limits, and the fuzzer again}
 Every resource a process can ask for needs a fixed upper bound, or one process can take all of it. Collect the limits
 in \code{include/limits.h}, which the kernel and Turk-libc share, check each one where the resource is taken, and
-copy the table into your notes.
+record the table in the engineering journal.
 
 \begin{center}
 \small\renewcommand{\arraystretch}{1.25}
@@ -346,7 +346,7 @@ Zombies accumulate after background jobs & Background children are never waited 
 Arguments arrive garbled in \code{main} & Wrong \code{argv} layout on the initial stack or missing NULL terminator & Compare the stack with the Phase 11 diagram in GDB. \\
 \end{pitfalls}
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[A usable system]
 \begin{checklist}
@@ -371,12 +371,12 @@ Arguments arrive garbled in \code{main} & Wrong \code{argv} layout on the initia
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 
 Add job control: process groups, \code{fg}, \code{bg} and \code{jobs}, and Ctrl+Z sending \code{SIGTSTP}. Give
 \code{tsh} variables, \code{if}, \code{for} and scripts run from files. Write a small full-screen text editor that uses
 raw mode and ANSI escapes. Or port an existing program with modest needs; a small interpreter such as Lua is a
-classic target, and the missing libc functions it asks for will show you what your library still lacks.
+classic target, and the missing libc functions it asks for show what Turk-libc still lacks.
 
 \nextphase{15}{Hardening, Polish and Release: Turk-OS 1.0}
 \booklegend

@@ -7,22 +7,22 @@
 \ataglance{2 weeks}{4}{Phase 9: semaphores and mutexes; Phase 4: IRQ handling; Phase 7: the heap and lists}{An ATA PIO driver that identifies,
 reads and writes the QEMU disk (first polling, then interrupt-driven), a block device layer with partitions from the
 MBR, a RAM disk from a boot module, a buffer cache with LRU replacement and write-back, and \code{lsblk} and
-\code{hexdump} commands. Data you write survives a reboot, and you can check it from Linux.}
+\code{hexdump} commands. Data written by Turk-OS survives a reboot and can be checked from Linux.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
 Everything Turk-OS knows vanishes when QEMU exits. \OSTEP's third big idea, \textbf{persistence}, starts here: a
 driver for a disk, and the layers that let the rest of the kernel use disks without knowing how they work. The file
 system in Phase 13 sits directly on top of this phase and never touches hardware.
 
-You will write the most complete driver so far. The ATA disk is controlled through a handful of I/O ports, it is slow
+The ATA driver is the most complete driver in the kernel to this point. The ATA disk is controlled through a handful of I/O ports, it is slow
 compared with the CPU, and it signals completion with an interrupt, so the task that asked for data should sleep
 until it arrives. That brings together port I/O (Phase 2), interrupts (Phase 4) and blocking synchronisation
-(Phase 9). Above the driver you will build the two layers that every UNIX kernel has in some form: a
+(Phase 9). Above the driver sit the two layers that every UNIX kernel has in some form: a
 device-independent \textbf{block layer} and a \textbf{buffer cache} that keeps recently used blocks in memory, because
 reading from RAM is thousands of times faster than reading from a disk.
 
-\section{Concepts you need}
+\section{Background}
 
 \subsection{How a disk is organised}
 
@@ -31,7 +31,7 @@ sector (CHS); everything modern uses \textbf{logical block addressing} (LBA), wh
 2, \dots\ \OSTEP chapter 37 builds a model of a mechanical disk's access time: \textbf{seek} time to move the arm,
 \textbf{rotational} delay waiting for the sector to come round, and \textbf{transfer} time. The model explains why
 sequential access is so much faster than random access, why disk schedulers reorder requests (FIFO, SSTF, SCAN,
-C-SCAN), and why every file system tries to keep related blocks close together. QEMU's disk is a file on your host,
+C-SCAN), and why every file system tries to keep related blocks close together. QEMU's disk is a file on the host,
 so none of the timing is real, but the interface is the same as on a real PC.
 
 \subsection{The layers of I/O software}
@@ -70,7 +70,7 @@ The primary ATA channel of a PC is a set of eight I/O ports starting at \code{0x
 into four registers, and writes the \code{READ SECTORS} command. When the drive has a sector ready it sets
 \textbf{DRQ} in the status register (and raises IRQ 14 if interrupts are enabled), and the driver reads 256 16-bit
 words from the data port. That is \textbf{programmed I/O} (PIO): the CPU copies every word. \textbf{DMA}, where the
-controller copies directly into memory, is faster and is a stretch goal (\OSTEP\,\S36.5, \MOS\,\S5.1.4).
+controller copies directly into memory, is faster and is left as an extension (\OSTEP\,\S36.5, \MOS\,\S5.1.4).
 
 \begin{table}[htbp]
 \centering\small\renewcommand{\arraystretch}{1.2}
@@ -102,7 +102,7 @@ or \code{sync} runs (\textbf{write-back}), which is faster but loses data in a c
 13's crash-consistency discussion. The cache also guarantees there is only ever \emph{one} buffer per block, so two
 tasks can't hold diverging copies.
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
 \must & \OSTEP & Ch.~36 \emph{I/O Devices}, especially \S36.8 \emph{A Simple IDE Disk Driver} & 405--416 & Section 36.8 is essentially the driver of Tasks 12.2--12.4. \\
@@ -113,10 +113,10 @@ tasks can't hold diverging copies.
 \should & \OSC & \S11.1--11.2 \emph{Mass-Storage Structure}, \emph{HDD Scheduling}; \S11.5 \emph{Storage Device Management} & 449--461, 463--467 & HDDs versus SSDs, scheduling, partitions and boot blocks. \\
 \should & \OSC & \S12.3--12.5 \emph{Application I/O Interface}, \emph{Kernel I/O Subsystem}, \emph{Transforming I/O Requests} & 500--519 & Block versus character devices; buffering and caching in the kernel. \\
 \could & \OSTEP & Ch.~38 \emph{RAID} & 437--456 & Combining disks for speed and reliability. \\
-\could & \OSDI & \S5.6.5 \emph{The Block Cache} & 557--559 & The MINIX buffer cache, which you will meet again in Phase 13. \\
+\could & \OSDI & \S5.6.5 \emph{The Block Cache} & 557--559 & The MINIX buffer cache, revisited in Phase 13. \\
 \should & \LKD & Ch.~14, \emph{The Block I/O Layer} & 289--304 & Buffers, \code{bio}, request queues and I/O schedulers. \\
 \should & \LKD & Ch.~8, \emph{Work Queues} & 149--157 & Running disk completion work outside the interrupt handler. \\
-\could & \LKD & Ch.~16, \emph{The Page Cache and Page Writeback} & 323--336 & Why Linux folded its buffer cache into the page cache (Going further). \\
+\could & \LKD & Ch.~16, \emph{The Page Cache and Page Writeback} & 323--336 & Why Linux folded its buffer cache into the page cache (see Extensions). \\
 \end{readingplan}
 
 The OSDev Wiki page \emph{ATA PIO Mode} is the practical reference for the register sequences, including the quirks
@@ -124,17 +124,17 @@ of real hardware that QEMU forgives.
 
 \begin{minixbox}
 The MINIX hard disk driver, \texttt{drivers/at\_wini/at\_wini.c (12100)}, is a user-space process that receives
-read and write requests as messages. Its \code{w_identify} does what your Task~12.2 does, and \code{w_transfer} with
+read and write requests as messages. Its \code{w_identify} does what Task~12.2 does, and \code{w_transfer} with
 \code{com_out} issues commands and waits for the interrupt. All block drivers share the main loop in
 \texttt{drivers/libdriver/driver.c (11000)}: that is the device-independent layer, done as a library. The RAM disk is
 \texttt{drivers/memory/memory.c (11600)}. The block cache is part of the file-system server, in
-\texttt{servers/fs/cache.c (22400)}, with \code{get_block} and \code{put_block} playing the roles of your
+\texttt{servers/fs/cache.c (22400)}, with \code{get_block} and \code{put_block} playing the roles of Turk-OS's
 \code{bread} and \code{brelse}.
 
-\par\smallskip\textbf{Linux, for comparison.} \LKD Linux describes I/O with \code{bio} structures in request queues that an I/O scheduler reorders, completes requests in bottom halves, and long ago folded its buffer cache into the unified \textbf{page cache}. Turk-OS keeps a buffer cache because TurkFS works in blocks; the page cache is a Going-further idea.
+\par\smallskip\textbf{Linux, for comparison.} \LKD Linux describes I/O with \code{bio} structures in request queues that an I/O scheduler reorders, completes requests in bottom halves, and long ago folded its buffer cache into the unified \textbf{page cache}. Turk-OS keeps a buffer cache because TurkFS works in blocks; the page cache is listed under Extensions.
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{A disk for QEMU}
 Create a raw disk image and attach it as the primary master; add a Makefile target so every run has it. Booting with
@@ -314,7 +314,7 @@ Two tasks see different contents for the same block & Two buffers were created f
 Partition data lands in the wrong place & The partition offset is applied twice, or not at all & Test with a known pattern at the partition's first sector and check with \code{hexdump -C} on the host. \\
 \end{pitfalls}
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[Data survives]
 \begin{checklist}
@@ -332,13 +332,13 @@ Partition data lands in the wrong place & The partition offset is applied twice,
   \item What are the three components of disk access time, and which one does sequential access avoid?
   \item Compare programmed I/O and DMA. What does the CPU do during each?
   \item Why must the driver check DRQ before every sector rather than once per command?
-  \item What does the device-independent block layer buy you? Give two concrete examples in Turk-OS.
+  \item What does the device-independent block layer provide? Give two concrete examples in Turk-OS.
   \item What does the buffer cache guarantee besides speed? What is the risk of write-back caching?
   \item Describe the layout of an MBR and one partition entry.
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 
 Enumerate the PCI bus through configuration ports \code{0xCF8}/\code{0xCFC}, find the IDE controller, and use its
 bus-master DMA engine so the CPU no longer copies every word. Queue requests and sort them with C-SCAN

@@ -1,17 +1,17 @@
 # Turk-OS documentation
 
-This folder holds the **Turk-OS study plan**, a roadmap and one document per phase that take the project from an empty
-folder to Turk-OS 1.0 on x86, then port it to RISC-V and ARM for Turk-OS 2.0. It also holds the working documents
-that the plan asks you to keep while building.
-For the project overview, see the [main README](../README.md).
+This folder holds the Turk-OS **design documents**: a roadmap and one design document per development phase, from the
+toolchain to release 1.0 on x86 and the RISC-V and AArch64 ports of release 2.0. It also holds the setup guide and the
+engineering records that the project keeps alongside the code. For the project overview, see the
+[main README](../README.md).
 
 ## Contents
 
 1. [Documents at a glance](#documents-at-a-glance)
-2. [The study plan](#the-study-plan)
-3. [How a phase document is organised](#how-a-phase-document-is-organised)
-4. [Reading the reading plans](#reading-the-reading-plans)
-5. [Working documents](#working-documents)
+2. [Design documents](#design-documents)
+3. [Structure of a phase document](#structure-of-a-phase-document)
+4. [References](#references)
+5. [Engineering records](#engineering-records)
 6. [Building the PDFs](#building-the-pdfs)
 7. [Editing or adding a document](#editing-or-adding-a-document)
 
@@ -19,68 +19,64 @@ For the project overview, see the [main README](../README.md).
 
 ## Documents at a glance
 
-| File | What it is |
+| File | Contents |
 |---|---|
-| [`setup.md`](setup.md) | Development environment setup for Arch, Fedora, Ubuntu/Debian, macOS and Windows (WSL2): host packages, the cross compiler, editor, verification, and the toolchains for the ports (section 9) |
-| [`journal.md`](journal.md) | The lab journal: one entry per work session (started in Phase 0) |
-| [`pdf/`](pdf/) | The study plan as PDFs, ready to read (committed to Git) |
+| [`setup.md`](setup.md) | Development environment setup for Arch, Fedora, Ubuntu/Debian, macOS and Windows (WSL2): host packages, the verified cross compiler, editor, verification, and the toolchains for the ports (section 9) |
+| [`journal.md`](journal.md) | The engineering journal: decisions, hypotheses and debugging notes, one entry per work session |
+| [`assets/`](assets/) | Diagrams used by the main README (SVG, light and dark) |
+| [`pdf/`](pdf/) | The design documents as PDFs (committed to Git) |
 | [`00-roadmap.tex`](00-roadmap.tex) | Source of the roadmap |
 | [`phases/`](phases/) | Sources of the nineteen phase documents |
-| [`common/turkos.sty`](common/turkos.sty) | Shared LaTeX style: colours, title banner, boxes, tables, code listings, book and reference chips |
+| [`common/turkos.sty`](common/turkos.sty) | Shared LaTeX style: colours, title banner, boxes, tables, code listings, reference chips |
 | [`Makefile`](Makefile), [`.latexmkrc`](.latexmkrc) | Build rules for the PDFs |
 
 ---
 
-## The study plan
+## Design documents
 
-Start with the roadmap, then read one phase at a time. Don't start a phase until the previous milestone is fully met.
-Phases 0–15 (Stages I–IV) lead to Turk-OS 1.0; Stage V (Phases 16–18) ports it to RISC-V and ARM.
+The roadmap is the entry point. Phases are implemented in order, and a phase starts only when every exit criterion of
+the previous one holds. Phases 0–15 (Stages I–IV) produce release 1.0; Stage V (Phases 16–18) produces release 2.0.
 
-| Document | Stage | Topic | Weeks | Difficulty | Progress |
-|---|---|---|:---:|:---:|:---:|
-| [Roadmap](pdf/00-roadmap.pdf) · [source](00-roadmap.tex) | | How to use the plan, the seven books and the Stage V references, technical decisions, phase map, timeline, the 1.0 and 2.0 architectures, risks, master tracker | | | |
-| [Phase 0](pdf/phase-00-foundations.pdf) · [source](phases/phase-00-foundations.tex) | I · Bare metal | Foundations and toolchain | 2–3 | 1/5 | 0 → 5 % |
-| [Phase 1](pdf/phase-01-assembly-and-boot.pdf) · [source](phases/phase-01-assembly-and-boot.tex) | I · Bare metal | x86 assembly and the boot process | 2–3 | 3/5 | 5 → 10 % |
-| [Phase 2](pdf/phase-02-output-drivers.pdf) · [source](phases/phase-02-output-drivers.tex) | I · Bare metal | Getting to C: screen, serial and `kprintf` | 1–2 | 2/5 | 10 → 16 % |
-| [Phase 3](pdf/phase-03-gdt-idt-exceptions.pdf) · [source](phases/phase-03-gdt-idt-exceptions.tex) | I · Bare metal | Segmentation, the IDT and CPU exceptions | 2 | 4/5 | 16 → 22 % |
-| [Phase 4](pdf/phase-04-hardware-interrupts.pdf) · [source](phases/phase-04-hardware-interrupts.tex) | I · Bare metal | Hardware interrupts: PIC, timer and keyboard | 2 | 3/5 | 22 → 28 % |
-| [Phase 5](pdf/phase-05-physical-memory.pdf) · [source](phases/phase-05-physical-memory.tex) | II · Memory | Physical memory management | 2 | 3/5 | 28 → 34 % |
-| [Phase 6](pdf/phase-06-paging-higher-half.pdf) · [source](phases/phase-06-paging-higher-half.tex) | II · Memory | Paging and the higher-half kernel | 2–3 | 5/5 | 34 → 42 % |
-| [Phase 7](pdf/phase-07-kernel-heap.pdf) · [source](phases/phase-07-kernel-heap.tex) | II · Memory | Kernel heap and core data structures | 2 | 3/5 | 42 → 48 % |
-| [Phase 8](pdf/phase-08-processes-scheduling.pdf) · [source](phases/phase-08-processes-scheduling.tex) | III · Processes | Processes, context switching and scheduling | 3 | 5/5 | 48 → 56 % |
-| [Phase 9](pdf/phase-09-synchronization.pdf) · [source](phases/phase-09-synchronization.tex) | III · Processes | Synchronization and concurrency in the kernel | 2 | 4/5 | 56 → 62 % |
-| [Phase 10](pdf/phase-10-user-mode-syscalls.pdf) · [source](phases/phase-10-user-mode-syscalls.tex) | III · Processes | User mode and system calls | 3 | 5/5 | 62 → 70 % |
-| [Phase 11](pdf/phase-11-process-api.pdf) · [source](phases/phase-11-process-api.tex) | III · Processes | Process API: `fork`, `exec`, `wait` and `exit` | 3 | 5/5 | 70 → 77 % |
-| [Phase 12](pdf/phase-12-storage-drivers.pdf) · [source](phases/phase-12-storage-drivers.tex) | IV · Persistence | Storage: block devices, ATA driver and buffer cache | 2 | 4/5 | 77 → 83 % |
-| [Phase 13](pdf/phase-13-file-systems.pdf) · [source](phases/phase-13-file-systems.tex) | IV · Persistence | File systems: VFS, initrd and TurkFS | 3–4 | 5/5 | 83 → 90 % |
-| [Phase 14](pdf/phase-14-userland-shell.pdf) · [source](phases/phase-14-userland-shell.tex) | IV · Persistence | Userland: libc, shell and utilities | 3 | 4/5 | 90 → 96 % |
-| [Phase 15](pdf/phase-15-hardening-release.pdf) · [source](phases/phase-15-hardening-release.tex) | IV · Persistence | Hardening, polish and release: Turk-OS 1.0 | 3–4+ | 4/5 | 96 → 100 % |
-| [Phase 16](pdf/phase-16-portability-layer.pdf) · [source](phases/phase-16-portability-layer.tex) | V · Ports | Portability: an architecture layer | 2–3 | 3/5 | V: 0 → 20 % |
-| [Phase 17](pdf/phase-17-riscv-port.pdf) · [source](phases/phase-17-riscv-port.tex) | V · Ports | The RISC-V port | 5–6+ | 4/5 | V: 20 → 60 % |
-| [Phase 18](pdf/phase-18-arm-port.pdf) · [source](phases/phase-18-arm-port.tex) | V · Ports | The ARM port, and Turk-OS 2.0 | 5–6+ | 5/5 | V: 60 → 100 % |
-
-The progress column estimates how much of the whole journey is behind you when that phase's milestone is met.
-Stage V has its own scale, marked V, measured toward Turk-OS 2.0; the 1.0 scale of Phases 0–15 does not change.
-Durations assume 10–12 hours a week: about 43 weeks to Turk-OS 1.0 and about 58 weeks to Turk-OS 2.0. A + means
-optional work on top of the estimate (the tracks of Phase 15 and the hardware milestones of Phases 17 and 18).
+| Document | Stage | Subject |
+|---|---|---|
+| [Roadmap](pdf/00-roadmap.pdf) · [source](00-roadmap.tex) | | Design goals, references, key technical decisions, phase map and summary, the 1.0 and 2.0 architectures, risks, exit criteria of every phase |
+| [Phase 0](pdf/phase-00-foundations.pdf) · [source](phases/phase-00-foundations.tex) | I · Bare metal | Foundations and toolchain |
+| [Phase 1](pdf/phase-01-assembly-and-boot.pdf) · [source](phases/phase-01-assembly-and-boot.tex) | I · Bare metal | x86 assembly and the boot process |
+| [Phase 2](pdf/phase-02-output-drivers.pdf) · [source](phases/phase-02-output-drivers.tex) | I · Bare metal | Consoles and logging: screen, serial and `kprintf` |
+| [Phase 3](pdf/phase-03-gdt-idt-exceptions.pdf) · [source](phases/phase-03-gdt-idt-exceptions.tex) | I · Bare metal | Segmentation, the IDT and CPU exceptions |
+| [Phase 4](pdf/phase-04-hardware-interrupts.pdf) · [source](phases/phase-04-hardware-interrupts.tex) | I · Bare metal | Hardware interrupts: PIC, timer and keyboard |
+| [Phase 5](pdf/phase-05-physical-memory.pdf) · [source](phases/phase-05-physical-memory.tex) | II · Memory | Physical memory management |
+| [Phase 6](pdf/phase-06-paging-higher-half.pdf) · [source](phases/phase-06-paging-higher-half.tex) | II · Memory | Paging and the higher-half kernel |
+| [Phase 7](pdf/phase-07-kernel-heap.pdf) · [source](phases/phase-07-kernel-heap.tex) | II · Memory | Kernel heap, core data structures and test infrastructure |
+| [Phase 8](pdf/phase-08-processes-scheduling.pdf) · [source](phases/phase-08-processes-scheduling.tex) | III · Processes | Processes, context switching and scheduling |
+| [Phase 9](pdf/phase-09-synchronization.pdf) · [source](phases/phase-09-synchronization.tex) | III · Processes | Synchronization and concurrency in the kernel |
+| [Phase 10](pdf/phase-10-user-mode-syscalls.pdf) · [source](phases/phase-10-user-mode-syscalls.tex) | III · Processes | User mode, system calls and the protection boundary |
+| [Phase 11](pdf/phase-11-process-api.pdf) · [source](phases/phase-11-process-api.tex) | III · Processes | Process API: `fork`, `exec`, `wait` and `exit` |
+| [Phase 12](pdf/phase-12-storage-drivers.pdf) · [source](phases/phase-12-storage-drivers.tex) | IV · Persistence | Storage: block devices, ATA driver and buffer cache |
+| [Phase 13](pdf/phase-13-file-systems.pdf) · [source](phases/phase-13-file-systems.tex) | IV · Persistence | File systems: VFS, initrd and TurkFS |
+| [Phase 14](pdf/phase-14-userland-shell.pdf) · [source](phases/phase-14-userland-shell.tex) | IV · Persistence | Userland: libc, shell and utilities |
+| [Phase 15](pdf/phase-15-hardening-release.pdf) · [source](phases/phase-15-hardening-release.tex) | IV · Persistence | Hardening and release 1.0 |
+| [Phase 16](pdf/phase-16-portability-layer.pdf) · [source](phases/phase-16-portability-layer.tex) | V · Ports | Portability: an architecture layer |
+| [Phase 17](pdf/phase-17-riscv-port.pdf) · [source](phases/phase-17-riscv-port.tex) | V · Ports | The RISC-V port |
+| [Phase 18](pdf/phase-18-arm-port.pdf) · [source](phases/phase-18-arm-port.tex) | V · Ports | The AArch64 port and release 2.0 |
 
 ### What each phase covers
 
 <details>
-<summary><b>Stage I: Bare metal (Phases 0–4)</b>. The tools, enough assembly, how a PC boots, output, exceptions and interrupts.</summary>
+<summary><b>Stage I: Bare metal (Phases 0–4)</b>. Toolchain, boot path, consoles, exceptions and interrupts.</summary>
 
 | Phase | Tasks |
 |---|---|
-| **0** Foundations | Install the host tools · make the editor's terminal see them · build the `i686-elf` cross compiler · create the repository skeleton · write and test the C warm-up library (`string`, `convert`, `bitmap`, `ringbuf`, `list.h`) · read your first assembly · smoke-test QEMU and GDB · start the lab journal |
-| **1** Assembly and boot | Read compiler output · write assembly that C can call (`max`, `sum_array`) · a 512-byte boot sector that prints "Merhaba, Turk-OS!" · "Hello Cafebabe": a Multiboot kernel that puts `0xCAFEBABE` in `EAX` · boot through a real GRUB ISO · a Makefile (`all`, `run`, `iso`, `debug`, `clean`) · your first kernel debugging session |
+| **0** Foundations | Install the host tools · make the editor's terminal see them · build the `i686-elf` cross compiler · create the repository skeleton · write and test the C warm-up library (`string`, `convert`, `bitmap`, `ringbuf`, `list.h`) · read compiler-generated assembly · smoke-test QEMU and GDB · start the engineering journal · threat-model stub |
+| **1** Assembly and boot | Read compiler output · write assembly that C can call (`max`, `sum_array`) · a 512-byte boot sector that prints "Merhaba, Turk-OS!" · "Hello Cafebabe": a Multiboot kernel that puts `0xCAFEBABE` in `EAX` · boot through a real GRUB ISO · a Makefile (`all`, `run`, `iso`, `debug`, `clean`) · the first kernel debugging session |
 | **2** Getting to C | Give the loader a stack and call C · compile C for the kernel · port I/O helpers · the VGA text driver · the serial driver · `kprintf`, log levels and the console layer · `panic` and `ASSERT` · read the Multiboot information |
-| **3** GDT, IDT, exceptions | Describe the GDT in C · load it and reload the segment registers · build and load the IDT · write the interrupt stubs · the C exception handler · a handler registration API · trigger every exception you can |
+| **3** GDT, IDT, exceptions | Describe the GDT in C · load it and reload the segment registers · build and load the IDT · write the interrupt stubs · the C exception handler · a handler registration API · trigger and verify every exception |
 | **4** Hardware interrupts | Remap and mask the PIC · IRQ stubs and dispatch · the timer · the keyboard driver · the Turkish Q layout (optional) · line input and the kernel monitor · keep handlers short: top and bottom halves |
 
 </details>
 
 <details>
-<summary><b>Stage II: Memory (Phases 5–7)</b>. Which RAM exists, paging, the higher half, the heap and the test harness.</summary>
+<summary><b>Stage II: Memory (Phases 5–7)</b>. Physical memory, paging, the higher half, the heap, tests and CI.</summary>
 
 | Phase | Tasks |
 |---|---|
@@ -110,12 +106,12 @@ optional work on top of the estimate (the tracks of Phase 15 and the hardware mi
 | **12** Storage | A disk for QEMU · find the drive with IDENTIFY · read and write sectors, polling · let the disk interrupt · a block device layer · partitions · a RAM disk · the buffer cache · tools and tests |
 | **13** File systems | The VFS objects · descriptors and the basic calls · devices as files · a read-only root from a tar archive · path lookup · TurkFS, reading · TurkFS, writing · `stat`, `fstat` and `getdents` · tests |
 | **14** Userland | Turk-libc: the skeleton · `malloc` in user space · `stdio` · pipes in the kernel · a real terminal · `tsh`, the Turk shell · core utilities · boot into the shell · test the userland |
-| **15** Release | Fuzz the system call interface · audit the boundary · harden the kernel itself · users and permissions · benchmarks and one real optimisation · write the documentation · release v1.0 · defend your design · then choose a track beyond 100 % |
+| **15** Release | Fuzz the system call interface · audit the boundary · harden the kernel itself · users and permissions · benchmarks and one real optimisation · write the documentation · release v1.0 · write the design review · extensions after v1.0 |
 
 </details>
 
 <details>
-<summary><b>Stage V: Ports (Phases 16–18)</b>. An architecture layer, then Turk-OS on RISC-V and on ARM: Turk-OS 2.0.</summary>
+<summary><b>Stage V: Ports (Phases 16–18)</b>. An architecture layer, then Turk-OS on RISC-V and AArch64: release 2.0.</summary>
 
 | Phase | Tasks |
 |---|---|
@@ -127,103 +123,100 @@ optional work on top of the estimate (the tracks of Phase 15 and the hardware mi
 
 ---
 
-## How a phase document is organised
+## Structure of a phase document
 
-Every phase document has the same sections in the same order, so you always know where to look.
+Every phase document has the same sections in the same order.
 
-| Section | What you find there |
+| Section | Contents |
 |---|---|
-| **Title banner and progress bar** | Phase number, title, one-line goal, and the overall progress this phase covers (in red). Stage V documents show their own bar, *Stage V progress toward Turk-OS 2.0* |
-| **At a glance** | Duration, difficulty (1–5 stars), what you need before starting, and what you will have at the end |
-| **Why this phase** | Where the phase fits and what problem it solves |
-| **Concepts you need** | The ideas to understand *before* writing code, with diagrams. Blue *concept* boxes hold key definitions |
-| **Reading plan** | Book chapters with printed page numbers, each marked REQUIRED, RECOMMENDED or OPTIONAL, and why to read it |
-| **Real-system lens** | How MINIX 3 does the same thing, with pointers into the printed source, followed by how Linux does it (from LKD and LKP). Stage V documents look at xv6-riscv, Linux and MINIX's ARM port instead |
-| **Build it** | Numbered tasks (Task 3.4 is phase 3, task 4) with starter code. Each ends with a green **Verify** line: the task isn't finished until that check passes |
-| **Testing and debugging** | A table of symptom → likely cause → fix for the bugs this phase usually produces |
-| **Milestone** | The exit criteria as a checklist. The phase is done when every box is ticked |
-| **Self-check questions** | Answer them without looking. If you can't, go back to the reading |
-| **Going further** | Stretch goals for when you finish early |
-| **Books used** | The legend of book codes at the end of every document; Stage V documents add a second legend for the port references |
+| **Title banner** | Phase number, title and a one-line statement of the phase's goal |
+| **At a glance** | What the phase depends on and what it delivers |
+| **Scope and motivation** | Where the phase fits and which problem it solves |
+| **Background** | The concepts the implementation relies on, with diagrams; blue boxes hold key definitions |
+| **References** | Chapters, sections and printed page numbers in the reference texts, weighted PRIMARY, SECONDARY or OPTIONAL, with their relevance |
+| **Prior art** | How MINIX 3 implements the same subsystem, with pointers into its printed source, and how Linux does it. Stage V documents compare with xv6-riscv and Linux |
+| **Implementation** | Numbered tasks (Task 3.4 is phase 3, task 4) with reference code. Each ends with a green **Verify** line, the acceptance check that closes the task |
+| **Testing and debugging** | Failure modes as symptom → likely cause → resolution |
+| **Exit criteria** | The conditions that close the phase |
+| **Review questions** | Technical questions the design must be able to answer |
+| **Extensions** | Optional work beyond the phase's scope |
+| **References legend** | The reference codes at the end of every document; Stage V documents add the port references |
 
-Coloured boxes appear throughout:
+Coloured boxes used throughout:
 
 | Box | Meaning |
 |---|---|
-| Concept (blue) | A definition or idea you must understand |
-| Hint (green) | A tip, a shortcut or a way out when something fails |
-| Watch out (amber) | A common trap, or a command that can do damage |
-| Real-system lens | How MINIX 3 and Linux solve the same problem (in Stage V, xv6-riscv or Linux) |
-| Decision (navy) | A design choice and the reasoning behind it |
-| Exit criteria (red) | The milestone checklist |
-| Self-check questions | Questions to test your understanding |
+| Concept (blue) | A key definition |
+| Note (green) | Practical guidance or a shortcut |
+| Caution (amber) | A common failure, or a command that can destroy data |
+| Prior art | How MINIX 3 and Linux (in Stage V, xv6-riscv or Linux) solve the same problem |
+| Decision (navy) | A design decision and its rationale |
+| Exit criteria (red) | The conditions that close the phase |
+| Review questions | Questions the design must answer |
 
 ---
 
-## Reading the reading plans
+## References
 
-Each reading plan row looks like this:
+Each reference row has this shape:
 
-| Priority | Book | Chapters | Pages | Why |
+| Weight | Source | Section | Pages | Relevance |
 |---|---|---|---|---|
-| REQUIRED | OSTEP | Ch. 1, Ch. 2 *Introduction to Operating Systems* | 1–22 | The three big ideas; the map for the whole plan |
+| PRIMARY | OSTEP | Ch. 1, Ch. 2 *Introduction to Operating Systems* | 1–22 | The three core abstractions the kernel implements |
 
-- **REQUIRED**: read before starting the tasks.
-- **RECOMMENDED**: makes the tasks easier and is worth the time.
-- **OPTIONAL**: background and depth for later.
+- **PRIMARY**: the material the phase's design depends on.
+- **SECONDARY**: a second treatment or useful depth.
+- **OPTIONAL**: background.
 
-The usual order within a phase is OSTEP first, then the other REQUIRED items, then the practical chapter of LOB, then
-the real-system lens (MINIX, then Linux through LKD and LKP).
-
-| Code | Book | Used for | Where to get it |
+| Code | Source | Role | Availability |
 |---|---|---|---|
-| **LOB** | Helin and Renberg, *The little book about OS development* (2015) | The practical build order | Free at [littleosbook.github.io](https://littleosbook.github.io/) |
-| **OSTEP** | Arpaci-Dusseau and Arpaci-Dusseau, *Operating Systems: Three Easy Pieces* (v0.90, 2015) | Main theory text | Free at [pages.cs.wisc.edu/~remzi/OSTEP](https://pages.cs.wisc.edu/~remzi/OSTEP/), one PDF per chapter |
-| **OSC** | Silberschatz, Galvin and Gagne, *Operating System Concepts* (10th ed., Wiley, 2018) | Reference and second explanation | Buy it, or borrow it from a library |
-| **MOS** | Tanenbaum and Bos, *Modern Operating Systems* (4th ed., Pearson, 2015) | Hardware, I/O, security, OS design | Buy it, or borrow it from a library |
-| **OSDI** | Tanenbaum and Woodhull, *Operating Systems: Design and Implementation* (3rd ed., Pearson Prentice Hall, 2006) | MINIX 3 with its full source listing | Buy it (often second-hand), or borrow it from a library |
-| **LKD** | Love, *Linux Kernel Development* (3rd ed., Addison-Wesley, 2010) | How Linux implements each subsystem | Buy it, or borrow it from a library |
-| **LKP** | Billimoria, *Linux Kernel Programming* (Packt, 2021) | Modern kernel practice: logging, allocators, scheduler, locking | Buy it, or borrow it from a library |
+| **LOB** | Helin and Renberg, *The little book about OS development* (2015) | Practical x86 bring-up | Free at [littleosbook.github.io](https://littleosbook.github.io/) |
+| **OSTEP** | Arpaci-Dusseau and Arpaci-Dusseau, *Operating Systems: Three Easy Pieces* (v0.90, 2015) | Primary theory reference | Free at [pages.cs.wisc.edu/~remzi/OSTEP](https://pages.cs.wisc.edu/~remzi/OSTEP/) |
+| **OSC** | Silberschatz, Galvin and Gagne, *Operating System Concepts* (10th ed., Wiley, 2018) | Comprehensive reference | Wiley |
+| **MOS** | Tanenbaum and Bos, *Modern Operating Systems* (4th ed., Pearson, 2015) | Hardware, I/O, security, OS design | Pearson |
+| **OSDI** | Tanenbaum and Woodhull, *Operating Systems: Design and Implementation* (3rd ed., Pearson Prentice Hall, 2006) | MINIX 3 with its full source: the main prior-art comparison | Pearson Prentice Hall |
+| **LKD** | Love, *Linux Kernel Development* (3rd ed., Addison-Wesley, 2010) | How Linux implements each subsystem | Addison-Wesley |
+| **LKP** | Billimoria, *Linux Kernel Programming* (Packt, 2021) | Current Linux practice: logging, allocators, scheduler, locking | Packt |
 
-The books are not part of this repository. The ISBNs of the editions the plan cites are in the
-[main README](../README.md#books-and-references) and in the roadmap.
+The roadmap lists the ISBNs of the cited editions.
 
-Stage V (Phases 16–18) also cites free references, with chips of their own. Specifications are revised often, so
+Stage V (Phases 16–18) also cites free references with chips of their own. Specifications are revised often, so
 those rows give the chapter or section title and `--` in the Pages column.
 
-| Code | Reference | Used for | Where to get it |
+| Code | Reference | Role | Availability |
 |---|---|---|---|
-| **XV6** | Cox, Kaashoek and Morris, *xv6: a simple, Unix-like teaching operating system*, RISC-V edition | A small UNIX kernel on RISC-V, chapter by chapter | Free at [pdos.csail.mit.edu/6.1810](https://pdos.csail.mit.edu/6.1810/), source at [github.com/mit-pdos/xv6-riscv](https://github.com/mit-pdos/xv6-riscv) |
+| **XV6** | Cox, Kaashoek and Morris, *xv6: a simple, Unix-like teaching operating system*, RISC-V edition | A small UNIX kernel on RISC-V | Free at [pdos.csail.mit.edu/6.1810](https://pdos.csail.mit.edu/6.1810/), source at [github.com/mit-pdos/xv6-riscv](https://github.com/mit-pdos/xv6-riscv) |
 | **RISCV** | *The RISC-V Instruction Set Manual*, Volumes I and II; the *RISC-V Supervisor Binary Interface Specification* | Instructions, CSRs, traps, Sv32 paging, SBI calls | Free at [riscv.org](https://riscv.org/specifications/ratified/) and [github.com/riscv-non-isa/riscv-sbi-doc](https://github.com/riscv-non-isa/riscv-sbi-doc) |
 | **ARM** | *Arm Architecture Reference Manual for A-profile architecture* (DDI 0487); Arm's *Learn the architecture* guides | Exception levels, the MMU, the generic timer, the GIC | Free at [developer.arm.com/documentation](https://developer.arm.com/documentation) |
 | **SPEC** | *Devicetree Specification*; OASIS *Virtio*; QEMU's documentation of the `virt` boards | The devicetree parser, the virtio-blk driver, the boards | Free at [devicetree.org](https://www.devicetree.org/specifications/), [docs.oasis-open.org/virtio](https://docs.oasis-open.org/virtio/virtio/), [qemu.org](https://www.qemu.org/docs/master/system/) |
 
-Three conventions matter when you look things up:
+Conventions:
 
-- **Page numbers are printed page numbers** of the editions above, not PDF page indices. A PDF viewer's page box
-  usually shows a different number.
-- **With any other edition, go by chapter and section.** Every reading-plan row gives both. For OSTEP this is the
-  normal case: each free chapter PDF starts at page 1, and the current version (1.10) is paginated differently from
-  v0.90. Chapters 1–43, and every section the plan cites, have the same numbers in both versions; only chapter 23 has
-  a new title (*Complete Virtual Memory Systems*, formerly *The VAX/VMS Virtual Memory System*).
+- **Page numbers are printed page numbers** of the editions above, not PDF page indices.
+- **With any other edition, use chapter and section.** Every reference row gives both. For OSTEP this is the normal
+  case: each free chapter PDF starts at page 1, and the current version (1.10) is paginated differently from v0.90.
+  Chapters 1–43, and every section cited, have the same numbers in both versions; only chapter 23 has a new title
+  (*Complete Virtual Memory Systems*, formerly *The VAX/VMS Virtual Memory System*).
 - **MINIX source references** such as `kernel/proc.c (07400)` give the file and its starting line number in OSDI
   Appendix B.
 
 ---
 
-## Working documents
+## Engineering records
 
-The plan asks you to keep these files in `docs/`, next to the plan itself. Create each one when its phase asks for it.
+These files live in `docs/` next to the design documents; each is created by the phase listed.
 
 | File | Created in | Contents |
 |---|---|---|
-| [`journal.md`](journal.md) | Phase 0 | Lab journal: date, what you tried, what happened, what you learned; a written hypothesis before every attempt on a long bug |
-| `syscalls.md` | Phase 10 | System call reference: number, arguments, return value and errors for each call |
-| Boundary audit table | Phase 15 | Every system call argument and how it is validated |
+| [`journal.md`](journal.md) | Phase 0 | Engineering journal: date, what was tried, what happened, what was learned; a written hypothesis before every attempt on a long-running defect |
+| `toolchain.lock` | Phase 0 | Versions of every tool the tree is built and tested with |
+| `security/threat-model.md` | Phase 0 (stub), Phase 10 | Assets, adversaries, trust boundaries, out-of-scope threats and residual risks |
+| `syscalls.md` | Phase 10 | System call reference: number, arguments, return value and errors |
+| `security/syscalls.md` | Phase 10 | Validation contract of every system call argument |
 | Benchmark results | Phase 15 | The benchmark table, with one optimisation measured before and after |
-| Architecture document | Phase 15 | Overview diagram, each subsystem, memory maps, system call table, lock order, TurkFS format, how to build, run, test and debug, known limitations (LaTeX next to the plan, or Markdown) |
-| Design reflection | Phase 15 | Three to five pages comparing each Turk-OS subsystem with MINIX 3 and Linux; Phase 18 adds a porting chapter |
-| `porting.md` | Phase 16 | The x86 leak audit (file, line, leak, fix) and notes on the architecture interface; Phases 17 and 18 add what each port taught you |
+| Architecture document | Phase 15 | Overview, each subsystem, memory maps, system call table, lock order, TurkFS format, build/run/test/debug, known limitations |
+| Design review | Phase 15 | Each Turk-OS subsystem compared with MINIX 3 and Linux; Phase 18 adds a porting chapter |
+| `porting.md` | Phase 16 | The x86 leak audit (file, line, leak, fix) and notes on the architecture interface |
 
 The lock order itself lives in code, in a comment block in `include/locks.h` (Phase 9).
 
@@ -231,12 +224,12 @@ The lock order itself lives in code, in a comment block in `include/locks.h` (Ph
 
 ## Building the PDFs
 
-The PDFs in [`pdf/`](pdf/) are committed, so you only need to build them after changing a `.tex` file.
+The PDFs in [`pdf/`](pdf/) are committed; rebuild them after changing a `.tex` file.
 
 ### Requirements
 
 `latexmk` and a TeX Live installation with pdfLaTeX. The install command for each platform (Arch, Fedora, Ubuntu/Debian,
-macOS, Windows through WSL2) is in [setup.md, section 8](setup.md#8-latex-for-the-study-plan-optional). The
+macOS, Windows through WSL2) is in [setup.md, section 8](setup.md#8-latex-for-the-design-documents-optional). The
 simplest choices are:
 
 | Platform | Command |
@@ -296,22 +289,20 @@ file in `phases/` automatically. Start from this skeleton:
 \usepackage{turkos}
 
 \begin{document}
-% Stage V only: label the bar with its own scale, before \phaseheader
-% \renewcommand{\progresslabel}{Stage V progress toward Turk-OS 2.0 (this phase in red)}
-% number, title, one-line goal, overall progress from, to (percent)
-\phaseheader{19}{Title}{One-line goal of the phase}{100}{100}
+% number, title, one-line goal, (unused), (unused)
+\phaseheader{19}{Title}{One-line goal of the phase}{}{}
 
-% duration, difficulty 1-5, prerequisites, outcome
-\ataglance{2 weeks}{3}{What you need first}{What you will have at the end}
+% (unused), (unused), dependencies, deliverables
+\ataglance{}{}{Phases this one depends on}{What the phase delivers}
 
-\section{Why this phase}
-\section{Concepts you need}
-\section{Reading plan}
+\section{Scope and motivation}
+\section{Background}
+\section{References}
 \begin{readingplan}
-\must & \OSTEP & Ch.~1 \emph{Title} & 1--10 & Why read it. \\
+\must & \OSTEP & Ch.~1 \emph{Title} & 1--10 & Relevance. \\
 \end{readingplan}
 
-\section{Build it}
+\section{Implementation}
 \task{First task}
 Explain the step.
 \begin{lst}{c}{kernel/example.c}
@@ -321,10 +312,10 @@ int example(void) { return 0; }
 
 \section{Testing and debugging}
 \begin{pitfalls}
-Symptom & Likely cause & Fix. \\
+Symptom & Likely cause & Resolution. \\
 \end{pitfalls}
 
-\section{Milestone}
+\section{Exit criteria}
 \begin{milestonebox}[Name of the milestone]
 \begin{checklist}
   \item First exit criterion.
@@ -333,11 +324,11 @@ Symptom & Likely cause & Fix. \\
 
 \begin{questionbox}
 \begin{enumerate}
-  \item A self-check question.
+  \item A review question.
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 \booklegend
 \end{document}
 ```
@@ -348,24 +339,22 @@ The commands and environments `common/turkos.sty` provides:
 
 | Name | Use |
 |---|---|
-| `\phaseheader{n}{title}{goal}{from}{to}` | Title banner with the overall progress bar |
-| `\progresslabel` | The text under the progress bar; Stage V documents redefine it with `\renewcommand` before `\phaseheader` |
-| `\ataglance{duration}{difficulty}{prerequisites}{outcome}` | The *at a glance* box; difficulty is 1–5 stars |
-| `\task{title}`, `\verify{text}` | A numbered build task and its check |
+| `\phaseheader{n}{title}{goal}{}{}` | Title banner (the last two arguments are unused) |
+| `\ataglance{}{}{dependencies}{deliverables}` | The *at a glance* box (the first two arguments are unused) |
+| `\task{title}`, `\verify{text}` | A numbered implementation task and its acceptance check |
 | `\begin{lst}{language}{caption}` | A code listing with a file name or caption (`c`, `asm` for NASM, `rvasm` and `a64asm` for GNU as on RISC-V and AArch64, `make`, `sh`, `plain`) |
 | `\code{text}` | Inline code |
-| `readingplan`, `\must`, `\should`, `\could` | The reading plan table and its REQUIRED / RECOMMENDED / OPTIONAL markers |
-| `\LOB`, `\OSTEP`, `\OSC`, `\MOS`, `\OSDI`, `\LKD`, `\LKP` | Coloured book chips |
+| `readingplan`, `\must`, `\should`, `\could` | The references table and its PRIMARY / SECONDARY / OPTIONAL markers |
+| `\LOB`, `\OSTEP`, `\OSC`, `\MOS`, `\OSDI`, `\LKD`, `\LKP` | Coloured reference chips |
 | `\XVSIX`, `\RVSPEC`, `\ARMDOC`, `\SPEC` | Chips for the Stage V references (printed as XV6, RISCV, ARM, SPEC) |
-| `pitfalls` | The symptom / cause / fix table |
-| `conceptbox{title}`, `tipbox[title]`, `warnbox[title]`, `decisionbox{title}`, `minixbox[title]` | Concept, hint, warning, decision and MINIX boxes |
-| `milestonebox[title]`, `checklist`, `questionbox` | Exit criteria, tick-box list and self-check questions |
+| `pitfalls` | The symptom / cause / resolution table |
+| `conceptbox{title}`, `tipbox[title]`, `warnbox[title]`, `decisionbox{title}`, `minixbox[title]` | Concept, note, caution, decision and prior-art boxes |
+| `milestonebox[title]`, `checklist`, `questionbox` | Exit criteria box, tick-box list and review questions |
 | `\tkth{text}` | A table header cell in the house style |
-| `\tkprogress{from}{to}` | A stand-alone progress bar |
-| `\nextphase{n}{title}`, `\booklegend`, `\portlegend` | The "next phase" link, the book legend at the end, and the Stage V reference legend |
+| `\nextphase{n}{title}`, `\booklegend`, `\portlegend` | The "next phase" link, the references legend at the end, and the Stage V reference legend |
 
 Colours are defined once in the style: `tkNavy`, `tkRed`, `tkBlue`, `tkGreen`, `tkAmber`, `tkGray`, `tkViolet` (the
-Stage V colour), the backgrounds `tkLight` and `tkCode`, one colour per book (`bkLOB`, `bkOSTEP`, `bkOSC`, `bkMOS`,
+Stage V colour), the backgrounds `tkLight` and `tkCode`, one colour per reference text (`bkLOB`, `bkOSTEP`, `bkOSC`, `bkMOS`,
 `bkOSDI`, `bkLKD`, `bkLKP`) and one per Stage V reference (`bkXV`, `bkRV`, `bkARM`, `bkSPEC`). Use these names instead of new colours
 so every document looks the same.
 

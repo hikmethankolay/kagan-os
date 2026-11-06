@@ -9,19 +9,19 @@ page directories that share the kernel half, a first jump into ring 3, a system 
 dispatch table, an ELF loader for programs passed as GRUB modules, a tiny user runtime (\code{crt0}, syscall
 wrappers), pointer validation for every user buffer, and faulty programs that get killed while the kernel survives.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
 Everything so far has run in ring 0, where any bug can corrupt anything. An operating system's core promise is
 \textbf{protection}: a buggy or malicious program can crash itself, but not the kernel and not other programs. That
-promise rests on three pieces of hardware you have already met: privilege rings (Phase 3), paging with the U/S bit
+promise rests on three hardware mechanisms introduced earlier: privilege rings (Phase 3), paging with the U/S bit
 (Phase 6), and the interrupt mechanism as the only way back into ring 0 (Phase 3). This phase connects them.
 
-You will also design the \textbf{system call interface}, the boundary between user programs and the kernel. Every
-file operation, every process operation and every byte of output from now on crosses it. Two habits established here
-protect you for the rest of the project: every argument from user space is treated as hostile, and every user pointer
+This phase also defines the \textbf{system call interface}, the boundary between user programs and the kernel. Every
+file operation, every process operation and every byte of output from now on crosses it. Two rules established here
+hold for the rest of the project: every argument from user space is treated as hostile, and every user pointer
 is checked before the kernel touches it.
 
-\section{Concepts you need}
+\section{Background}
 
 \subsection{Limited direct execution}
 
@@ -38,7 +38,7 @@ the library wrapper down to the kernel and back.
 When an interrupt or trap arrives while the CPU is in ring 3, it can't keep using the user's stack: the user controls
 that memory, and ESP might point anywhere. So the CPU switches to a kernel stack first, and it finds that stack in the
 \textbf{task state segment} (TSS): fields \code{ss0} and \code{esp0}. Then it pushes the user's SS and ESP followed by
-the usual EFLAGS, CS and EIP (Figure~\ref{fig:ringchange}); these are the \code{useresp} and \code{ss} fields you left
+the usual EFLAGS, CS and EIP (Figure~\ref{fig:ringchange}); these are the \code{useresp} and \code{ss} fields reserved
 at the top of \code{struct regs} in Phase 3. \code{iret} reverses the whole thing. Turk-OS uses the TSS only for this;
 x86 hardware task switching is ignored. Because each task has its own kernel stack, the scheduler must update
 \code{esp0} on every context switch.
@@ -62,7 +62,7 @@ x86 hardware task switching is ignored. Because each task has its own kernel sta
 \subsection{An address space per process}
 
 Each process gets its own page directory. Entries 0--767 (the user half) are private; entries 768--1023 are copied
-from the kernel's directory, and because you pre-allocated every kernel page table in Phase 6, those copies stay
+from the kernel's directory, and because every kernel page table is pre-allocated in Phase 6, those copies stay
 correct forever. Switching processes means loading the new directory into CR3. Figure~\ref{fig:uas} shows the layout
 of one process. User pages carry the U/S bit in both their PDE and PTE; kernel pages never do, so even though the
 kernel is mapped in every address space, user code can't touch it.
@@ -107,26 +107,26 @@ allocates and maps pages, copies, zeroes, sets up a user stack, and jumps. \OSC\
 Until Turk-OS has a file system (Phase 13), programs arrive as \textbf{Multiboot modules}: GRUB (or QEMU's
 \code{-initrd}) loads extra files into memory and lists them in the Multiboot information, just as \LOB chapter 7 does.
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
 \must & \LOB & Ch.~7 \emph{The Road to User Mode} (GRUB modules, executing a program); Ch.~11 \emph{User Mode}; Ch.~13 \emph{System Calls} & 47--49, 65--68, 71--72 & The x86 steps of Tasks 10.1--10.6. \\
-\must & \OSTEP & Ch.~6 \S6.1--6.2 \emph{Basic Technique}, \emph{Restricted Operations} (re-read) & 49--55 & User mode, kernel mode, traps and the trap table. \\
+\must & \OSTEP & Ch.~6 \S6.1--6.2 \emph{Basic Technique}, \emph{Restricted Operations} & 49--55 & User mode, kernel mode, traps and the trap table. \\
 \must & \MOS & \S1.6 \emph{System Calls} (process, file and directory calls; the steps of \code{read}) & 50--62 & What a system call interface looks like, and a model to copy. \\
 \should & \OSC & \S2.1--2.5 \emph{Services}, \emph{Interface}, \emph{System Calls}, \emph{Linkers and Loaders} & 55--77 & Parameter passing, API versus system call, loaders. \\
 \should & \OSC & \S1.4 \emph{Operating-System Operations} (dual mode, timers) & 21--27 & Why the timer is part of protection. \\
 \should & \OSDI & \S1.4 \emph{System Calls} & 26--42 & The POSIX calls a UNIX needs, in one tour. \\
 \should & \OSDI & \S2.7 \emph{The System Task in MINIX 3} & 192--204 & How MINIX lets user-space servers request privileged work. \\
-\could & \MOS & \S12.2 \emph{Interface Design} & 985--993 & Principles for choosing your system calls. \\
+\could & \MOS & \S12.2 \emph{Interface Design} & 985--993 & Principles for choosing a system call set. \\
 \could & \MOS & \S9.7 \emph{Exploiting Software} & 639--657 & Why every user pointer must be checked. \\
 \could & \OSC & \S17.3 \emph{Protection Rings} & 669--671 & Rings in general, and why most OSes use only two. \\
 \must & \LKD & Ch.~5, \emph{System Calls} & 69--84 & Numbers, the handler, parameter passing and verifying user pointers. \\
 \could & \LKP & Ch.~6, \emph{Viewing the user and kernel stacks} & 281--289 & Two stacks per thread, seen on a running system. \\
 \end{readingplan}
 
-Keep the Intel SDM Volume 3A at hand for the TSS format (the task management chapter) and for the stack switch on a
-privilege change (the interrupt chapter), and the ELF specification (\emph{Tool Interface Standard, ELF 1.2}) for the
-header formats.
+The Intel SDM Volume 3A is the reference for the TSS format (the task management chapter) and for the stack switch on a
+privilege change (the interrupt chapter), and the ELF specification (\emph{Tool Interface Standard, ELF 1.2}) for
+the header formats.
 
 \begin{minixbox}
 In MINIX, a POSIX call like \code{read} is not a kernel call at all. The library turns it into a message, and the
@@ -134,12 +134,12 @@ kernel's only job is to deliver that message to a user-space server (the file sy
 \code{sys_call} in \texttt{kernel/proc.c (07400)}. When a server needs something privileged, such as copying data
 between address spaces or writing an I/O port, it sends a \emph{kernel call} to the \textbf{system task},
 \texttt{kernel/system.c (09700)}, described in \OSDI\,\S2.7. So MINIX has two layers of calls where Turk-OS has one:
-your \code{int 0x80} goes straight to a kernel function.
+an \code{int 0x80} goes straight to a kernel function.
 
 \par\smallskip\textbf{Linux, for comparison.} \LKD Linux on i386 enters system calls through \code{int 0x80} (or \code{sysenter}) into a table indexed by the number in \code{EAX}, and every user pointer goes through \code{copy_from_user} and \code{copy_to_user}, exactly as in Turk-OS.
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{Install a TSS}
 Define the 104-byte TSS structure, put it in GDT entry 5 (selector \code{0x28}) with access byte \code{0x89} (present,
@@ -171,7 +171,7 @@ void tss_init(void)
 
 void tss_set_kernel_stack(uint32_t esp0) { tss.esp0 = esp0; }
 \end{lst}
-\verify{\code{info registers} in the QEMU monitor shows \code{TR=0028} with your TSS's base address.}
+\verify{\code{info registers} in the QEMU monitor shows \code{TR=0028} with the TSS's base address.}
 
 \task{Give every process an address space}
 Add a page directory pointer to \code{struct task} (kernel threads use the kernel's directory). Write
@@ -182,7 +182,7 @@ task's kernel stack.
 \verify{Two kernel threads with different directories both run; \code{info mem} shows the kernel mappings in each.}
 
 \task{The first jump into ring 3}
-Take a baby step before loading real programs. Create an address space, map one user page at \code{0x00400000}
+Start with a minimal case before loading real programs. Create an address space, map one user page at \code{0x00400000}
 containing just the two bytes \code{EB FE} (\code{jmp $}, an infinite loop), map one user stack page, and enter ring 3
 by building the frame \code{iret} expects: SS, ESP, EFLAGS (with IF set), CS, EIP. The user selectors have RPL 3:
 \code{0x1B} for code and \code{0x23} for data.
@@ -214,9 +214,9 @@ task runs, \code{info registers} shows \code{CS=001b} and \code{EIP=00400000}.}
 \task{The system call gate}
 Add stub 128 to \code{isr.s} and install it with \code{idt_set_gate(0x80, isr128, 0x08, 0xEF)}: a 32-bit
 \emph{trap} gate with DPL 3. DPL 3 lets ring 3 use it; the trap type leaves interrupts enabled during system calls,
-so a long call can be preempted like any other kernel code (your Phase 9 locks make that safe). Register a handler
+so a long call can be preempted like any other kernel code (the Phase 9 locks make that safe). Register a handler
 that dispatches on EAX. Use the Linux i386 numbers for the calls you implement; then any Linux reference table
-matches yours.
+matches Turk-OS.
 
 \begin{lst}{c}{kernel/syscall/syscall.c}
 enum { SYS_exit = 1, SYS_read = 3, SYS_write = 4, SYS_getpid = 20,
@@ -290,8 +290,8 @@ qemu-system-i386 -kernel build/kernel.elf -serial stdio \
     -initrd "build/user/hello.elf,build/user/evil.elf"
 \end{lst}
 
-In the kernel, walk \code{mods_count} and \code{mods_addr} (through \code{P2V}), reserve the modules' frames in the PMM (you
-did that in Phase 5), and keep a table of name, start and end for the loader.
+In the kernel, walk \code{mods_count} and \code{mods_addr} (through \code{P2V}), reserve the modules' frames in the PMM (as
+in Phase 5), and keep a table of name, start and end for the loader.
 
 \task{The ELF loader}
 Write \code{elf_load(pgdir, image, size, &entry)}. The image comes from outside the kernel, so validate everything
@@ -300,8 +300,8 @@ magic bytes \code{7F 45 4C 46}, 32-bit class, little-endian, type \code{ET_EXEC}
 \code{e_phentsize} equal to the size of \code{struct elf32_phdr}, and between 1 and 16 program headers that lie inside
 the file. Each \code{PT_LOAD} header must then pass five checks, with every sum checked for overflow. Its file bytes,
 \code{p_offset} plus \code{p_filesz}, lie inside the image; otherwise the copy reads past it. \code{p_filesz} is at
-most \code{p_memsz}; otherwise the copy writes past the frames you allocated for \code{p_memsz}. \code{p_vaddr} is at
-least \code{USER_BASE} (\code{0x00400000}, where your programs are linked). \code{p_vaddr} plus \code{p_memsz} is at
+most \code{p_memsz}; otherwise the copy writes past the frames allocated for \code{p_memsz}. \code{p_vaddr} is at
+least \code{USER_BASE} (\code{0x00400000}, where user programs are linked). \code{p_vaddr} plus \code{p_memsz} is at
 most \code{0xC0000000}. The segments come in address order and never share a page. Last, the entry point must lie
 inside an executable segment. The minimum address matters more than it looks: a program that maps page~0 turns every
 kernel \code{NULL} dereference into a read of memory it controls, and on a CPU without SMEP even into running its code.
@@ -371,7 +371,7 @@ int elf_check(const uint8_t *image, size_t size, uint32_t *entry)
 Because \code{elf_check} is a pure function of a byte buffer, it also compiles on the host, and that makes it a
 perfect \textbf{fuzz target}. A coverage-guided fuzzer such as libFuzzer (part of clang) calls it millions of times
 with mutated inputs under the address and undefined-behaviour sanitizers, and stops at the first out-of-bounds read
-or overflow. Seed it with your real programs, so it starts from valid files and mutates them into almost-valid ones.
+or overflow. Seed it with the real programs, so it starts from valid files and mutates them into almost-valid ones.
 
 \begin{lst}{c}{tests/host/fuzz_elf.c}
 /* clang -g -O1 -fsanitize=fuzzer,address,undefined -Iinclude \
@@ -489,8 +489,8 @@ Ring 3 exists now, so the Phase~0 stub \code{docs/security/threat-model.md} beco
 Keep its assets, adversaries and out-of-scope list, and add two things. First, the trust boundaries that exist now:
 ring 3 to ring 0 (\code{int 0x80} and every exception raised in user mode), and ELF files to the loader. Second, walk
 each boundary with \textbf{STRIDE}, which names six kinds of threat: spoofing, tampering, repudiation, information
-disclosure, denial of service and elevation of privilege. Write one line per threat: what could happen, which control
-in your kernel stops it, and how much risk is left. Record what you accept as well, such as the lack of a no-execute
+disclosure, denial of service and elevation of privilege. Write one line per threat: what could happen, which kernel
+control stops it, and how much risk is left. Record the accepted risks as well, such as the lack of a no-execute
 bit for user data under 32-bit paging without PAE. Phases 13 and 15 add their boundaries to the same file.
 
 \begin{lst}{plain}{docs/security/threat-model.md (v0, added sections)}
@@ -518,13 +518,13 @@ canary from rdtsc when rdrand is missing (predictable).
 Next, arm the stack protector. Compile the kernel with \code{-fstack-protector-strong}: GCC then places a canary
 between the local arrays and the saved return address of every function that has such arrays, and checks it before
 the function returns. On \code{i686-elf}, GCC reads the canary from a global variable, \code{__stack_chk_guard} (there
-is no thread-local storage), and calls \code{__stack_chk_fail} when the check fails. You provide both, and the second
+is no thread-local storage), and calls \code{__stack_chk_fail} when the check fails. The kernel provides both, and the second
 only needs \code{panic}. The guard must be unpredictable, and setting it has one trap. A protected function that was
 entered before the guard changed compares its old canary with the new guard when it returns, and reports stack
 smashing that never happened. So set the guard in \code{canary_init}, which is built with \code{-fno-stack-protector},
 and call it first thing in \code{kmain}, which gets the same flag and never returns. Use \code{rdrand} when CPUID
 reports it (QEMU's \code{-cpu max} has it); otherwise mix \code{rdtsc} with the Multiboot memory map. That fallback is
-predictable, which is acceptable for a teaching system and nothing more, so write it into the threat model.
+predictable, which is acceptable for a non-production kernel and nothing more, so write it into the threat model.
 
 \begin{lst}{c}{kernel/security/canary.c (built with -fno-stack-protector)}
 uint32_t __stack_chk_guard;
@@ -596,7 +596,7 @@ Ring-0 page fault with error code 3 inside \code{copy_to_user} & The destination
 ``stack smashing detected'' right after boot, with no overflow in sight & The guard changed while a protected function was still running, so its return compared against the new value & Set the guard in a \code{-fno-stack-protector} function called first in \code{kmain}. \\
 \end{pitfalls}
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[Protection works]
 \begin{checklist}
@@ -624,7 +624,7 @@ Ring-0 page fault with error code 3 inside \code{copy_to_user} & The destination
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 
 Replace \code{int 0x80} with the faster \code{sysenter}/\code{sysexit} pair and measure the difference with
 \code{rdtsc}. Put \code{argc}, \code{argv} and the environment on the initial user stack in the System V i386 layout,

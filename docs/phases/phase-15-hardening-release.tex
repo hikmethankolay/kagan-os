@@ -9,31 +9,30 @@ system call fuzzer that runs for an hour without a kernel panic, an audited user
 protection and read-only kernel code, users, file and device permissions with sessions, a threat model with its
 residual risks, a benchmark suite with one measured optimisation, an architecture document, a reproducible
 \code{make release} that produces a bootable ISO with published hashes, the signed \code{v1.0} tag, and a
-written reflection on your design. After that, a choice of tracks beyond 100\,\%, and Stage V: the RISC-V and ARM
+written design review. After that, optional extension tracks, and Stage V: the RISC-V and ARM
 ports of Phases 16--18.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
-A system isn't finished when its features work on the inputs you tried. It is finished when it survives inputs
-nobody intended, when you know how fast it is and why, when someone else can build and understand it, and when you
-can explain every design choice in it. That is the difference between a demo and version 1.0, and this phase is about
+A system isn't finished when its features work on the inputs it was tested with. It is finished when it survives inputs
+nobody intended, when its performance is measured and explained, when someone else can build and understand it, and when
+every design choice in it is documented and justified. That is the difference between a demo and version 1.0, and this phase is about
 closing that gap.
 
-It is also a good moment to step back. \MOS chapter 12, written by an author who designed several operating systems,
-is about exactly the decisions you have been making for nine months: interfaces, structure, mechanism versus policy,
-performance, and managing a large software project. Reading it now, with your own kernel in mind, is very different
-from reading it at the start. The phase ends with a written comparison of Turk-OS against MINIX 3 and Linux, a list
-of optional tracks for going further, and a look ahead to Stage V, which ports Turk-OS to RISC-V (including the core
-you are building in hardware) and to ARM.
+The release is also the point for a design review. \MOS chapter 12, written by an author who designed several operating
+systems, covers exactly the decisions made across Phases 0--14: interfaces, structure, mechanism versus policy,
+performance, and managing a large software project. The phase ends with a written comparison of Turk-OS against
+MINIX 3 and Linux, a list of optional extension tracks, and a look ahead to Stage V, which ports Turk-OS to RISC-V
+(including the project's own hardware core) and to ARM.
 
-\section{Concepts you need}
+\section{Background}
 
 \subsection{The kernel is the trusted computing base}
 
 \MOS\,\S9.2.2 defines the \textbf{trusted computing base} (TCB): the hardware and software that must be correct for
 the system's security to hold. In Turk-OS that is the entire kernel. Every system call is an entry point into the TCB
 controlled by a possibly hostile program, which is why Phase 10's rule (never trust a user pointer) was only the
-start. \MOS\,\S9.7 catalogues how kernels get broken, and several items apply directly to code you have written:
+start. \MOS\,\S9.7 catalogues how kernels get broken, and several items apply directly to Turk-OS code:
 \textbf{buffer overflows} when a length from the user isn't checked; \textbf{integer overflows} when
 \code{offset + length} wraps around; \textbf{null-pointer dereferences} in the kernel; and \textbf{time-of-check to
 time-of-use} (TOCTOU) races, where the kernel checks a value in user memory and then reads it again after the user has
@@ -57,27 +56,28 @@ passing a token through pipes, process creation, and file-system throughput.
 
 \subsection{Design, looking back}
 
-\MOS\,\S12.2--12.3 lists principles you can now test against your own code: \textbf{simplicity} and
+\MOS\,\S12.2--12.3 lists principles to measure Turk-OS against: \textbf{simplicity} and
 \textbf{completeness} of the interface, \textbf{orthogonality} (independent concepts that combine freely, like
-\code{fork} and \code{exec}), \textbf{separation of mechanism and policy} (your scheduler), static versus dynamic
-structures (MINIX's fixed tables versus your heap), and top-down versus bottom-up implementation (you went bottom-up).
+\code{fork} and \code{exec}), \textbf{separation of mechanism and policy} (the Turk-OS scheduler), static versus dynamic
+structures (MINIX's fixed tables versus the Turk-OS heap), and top-down versus bottom-up implementation (Turk-OS is
+built bottom-up).
 \S12.5 adds Brooks's observations about software projects, including the \emph{second-system effect}: the temptation to
-put everything you left out of version 1 into version 2.
+put everything left out of version 1 into version 2.
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
-\must & \MOS & Ch.~12 \emph{Operating System Design}: nature of the problem, interface design, implementation, performance, project management, trends & 981--1030 & Read all of it, with Turk-OS in mind. \\
+\must & \MOS & Ch.~12 \emph{Operating System Design}: nature of the problem, interface design, implementation, performance, project management, trends & 981--1030 & The design principles behind the Task~15.8 review. \\
 \must & \MOS & \S9.1--9.3 \emph{The Security Environment}, \emph{Operating Systems Security}, \emph{Controlling Access to Resources} & 595--611 & Threats, the TCB, protection domains, ACLs and capabilities. \\
-\must & \MOS & \S9.7 \emph{Exploiting Software} (buffer overflows, format strings, dangling and null pointers, integer overflows, TOCTOU) & 639--657 & The bugs your audit is looking for. \\
+\must & \MOS & \S9.7 \emph{Exploiting Software} (buffer overflows, format strings, dangling and null pointers, integer overflows, TOCTOU) & 639--657 & The bug classes the boundary audit looks for. \\
 \should & \MOS & \S9.10 \emph{Defenses} (especially code signing and jailing) & 684--703 & What operating systems add on top of correct code. \\
 \should & \OSC & \S16.1--16.2 \emph{The Security Problem}, \emph{Program Threats}; \S16.5--16.6 \emph{User Authentication}, \emph{Implementing Security Defenses} & 621--634, 648--662 & A second view, with passwords and defences in depth. \\
 \should & \OSC & Ch.~17 \emph{Protection}, \S17.1--17.6 (principles, rings, domains, access matrix) & 667--682 & The formal model behind UNIX permissions. \\
 \should & \OSDI & \S5.4--5.5 \emph{Security}, \emph{Protection Mechanisms} & 526--548 & Compact coverage of authentication, ACLs, capabilities and covert channels. \\
-\should & \OSDI & \S1.5 \emph{Operating System Structure}; \S2.5.1 \emph{The Internal Structure of MINIX 3} & 42--51, 112--116 & Monolithic versus microkernel, for your design reflection. \\
-\should & \MOS & \S10.1--10.8 \emph{Case Study: UNIX, Linux, and Android} (skim) & 713--848 & Compare each subsystem with yours. \\
+\should & \OSDI & \S1.5 \emph{Operating System Structure}; \S2.5.1 \emph{The Internal Structure of MINIX 3} & 42--51, 112--116 & Monolithic versus microkernel, for the design review. \\
+\should & \MOS & \S10.1--10.8 \emph{Case Study: UNIX, Linux, and Android} (skim) & 713--848 & The Linux column of the design review. \\
 \could & \OSC & Ch.~20 \emph{The Linux System} & 775--819 & Another view of Linux for the comparison. \\
-\should & \LKD & Ch.~18, \emph{Debugging} & 363--378 & Oopses, assertions and debugging techniques for your hardening work. \\
+\should & \LKD & Ch.~18, \emph{Debugging} & 363--378 & Oopses, assertions and debugging techniques for the hardening work. \\
 \could & \LKP & Ch.~5, \emph{Kernel modules and security -- an overview}; Ch.~7, \emph{Randomizing the memory layout -- KASLR} & 256--261, 362--367 & Defences a production kernel adds. \\
 \should & \SPEC & NIST SP~800-218, \emph{Secure Software Development Framework} (\url{https://csrc.nist.gov/pubs/sp/800/218/final}), practices PS and PW & -- & The yardstick for Task~15.7's release integrity and Task~15.2's review. \\
 \should & \SPEC & Linux kernel documentation, \emph{Kernel Self-Protection} (\url{https://docs.kernel.org/security/self-protection.html}) & -- & The defences of Task~15.3, and the ones Turk-OS leaves out. \\
@@ -87,13 +87,13 @@ put everything you left out of version 1 into version 2.
 MINIX 3's central design goal is reliability, and \OSDI\,\S2.5.1 explains how its structure serves it. Drivers run
 as separate user processes with only the privileges they need, so a buggy driver can't overwrite the kernel. A
 special process, the \textbf{reincarnation server}, watches the drivers and servers and restarts any that crash
-(\OSDI pp.~114 and 599). In Turk-OS, every driver bug is a kernel bug. Keep this contrast in mind for Task~15.8, and
-look at Track E below if you want to try the MINIX approach on one of your own drivers.
+(\OSDI pp.~114 and 599). In Turk-OS, every driver bug is a kernel bug. This contrast belongs in the design review of Task~15.8,
+and Track E below applies the MINIX approach to one Turk-OS driver.
 
 \par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux's hardening goes further: KASLR, signed modules, lockdep and memory-error detectors such as KASAN, plus the \code{BUG_ON}/\code{WARN_ON} assertions and oops reports that \LKD's chapter on debugging describes.
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{Fuzz the system call interface}
 \code{user/bin/fuzz} has made random system calls since Phase 11, with a seed you can print and replay, and Phase 14
@@ -251,7 +251,7 @@ Write an architecture document (a LaTeX file next to this plan, or Markdown): an
 roadmap; each subsystem in a page or two; the virtual and physical memory maps; the system call table with numbers,
 arguments and errors; the lock order; the TurkFS on-disk format; how to build, run, test and debug; and known
 limitations. Add a \code{README} that gets a newcomer from a clean clone to a running shell, and a
-license (MIT matches your other open-source work).
+license (MIT).
 
 Bring \code{docs/security/threat-model.md} to version 1. Next to the assets, adversaries and trust boundaries it
 already lists, add a table of residual risks: each threat, the control that addresses it, and what is left, such as
@@ -292,50 +292,50 @@ git tag -s v1.0 -m "Turk-OS 1.0"                                  # needs a GPG 
 tagged commit. Two clean builds give identical \code{kernel.elf} hashes, \code{SHA256SUMS} matches the published files,
 and \code{git tag -v v1.0} reports a good signature.}
 
-\task{Defend your design}
-Write a reflection of three to five pages, as if for a thesis committee. For each subsystem (boot, memory, processes,
+\task{Write the design review}
+Write a design review and architecture retrospective of three to five pages. For each subsystem (boot, memory, processes,
 scheduling, synchronisation, system calls, file system, drivers), state what Turk-OS does, how MINIX 3 does it
-(\OSDI) and how Linux does it (\MOS chapter 10), and what you would change with hindsight. Use \MOS chapter 12's
-principles as the yardstick, and end with the one decision you are proudest of and the one you would reverse first.
-Presenting it to your advisor or classmates is the best test of whether you really understand your own system.
+(\OSDI) and how Linux does it (\MOS chapter 10), and what should change with hindsight. Use \MOS chapter 12's
+principles as the yardstick, and end with the decision that held up best and the one to reverse first. Record the
+review in \code{docs/} next to the architecture document, and walk through it with at least one reviewer who did not
+write the code.
 
-\section{Beyond 100\,\%: choose a track}
+\section{Extensions after v1.0}
 
-Turk-OS 1.0 is a complete small system. The guided way on is Stage V (Phases 16--18), which ports it to two more
-architectures with tasks, checks and milestones like the ones you know. The tracks below are open-ended instead. They
-extend Turk-OS in different directions; each is a project of several weeks to several months, and they can be
-combined with each other and with Stage V. Pick by interest, not by size.
+Turk-OS 1.0 is a complete small system. The planned continuation is Stage V (Phases 16--18), which ports it to two
+more architectures with the same structure of tasks, checks and exit criteria. The tracks below are open-ended
+instead. They extend Turk-OS in different directions, vary widely in size, and can be combined with each other and
+with Stage V.
 
 \begin{center}
 \small\renewcommand{\arraystretch}{1.35}
 \begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.19\linewidth} >{\raggedright\arraybackslash}p{0.46\linewidth} >{\raggedright\arraybackslash}p{0.29\linewidth}@{}}
 \toprule
-\tkth{Track} & \tkth{What you build} & \tkth{Where to read} \\
+\tkth{Track} & \tkth{Scope} & \tkth{References} \\
 \midrule
 \endfirsthead
 \toprule
-\tkth{Track} & \tkth{What you build} & \tkth{Where to read} \\
+\tkth{Track} & \tkth{Scope} & \tkth{References} \\
 \midrule
 \endhead
 \bottomrule
 \endlastfoot
 A.\ Graphics and Turkish text & Request a linear framebuffer through the Multiboot video fields, draw text with a PSF font that covers the whole Turkish alphabet (ğ, ş, ı, İ, Ğ, Ş), add a PS/2 mouse (IRQ 12), then a simple window system & \MOS\,\S5.6 (user interfaces); OSDev Wiki (VESA, PSF, mouse) \\
-B.\ Multiprocessor (SMP) & Parse the ACPI MADT, program the local APIC and I/O APIC, start the other CPUs (INIT--SIPI--SIPI), per-CPU data and run queues, TLB shootdown; your Phase 9 spinlocks finally spin & \MOS\,\S8.1 (520--544); \OSTEP Ch.~10 (97--108); \OSC\,\S5.5 (220--227) \\
+B.\ Multiprocessor (SMP) & Parse the ACPI MADT, program the local APIC and I/O APIC, start the other CPUs (INIT--SIPI--SIPI), per-CPU data and run queues, TLB shootdown; the Phase 9 spinlocks see real contention & \MOS\,\S8.1 (520--544); \OSTEP Ch.~10 (97--108); \OSC\,\S5.5 (220--227) \\
 C.\ Networking & PCI enumeration, an e1000 or RTL8139 driver in QEMU, Ethernet, ARP, IPv4, ICMP (\code{ping}), UDP, then a minimal TCP and a socket API & \OSC Ch.~19 (733--768); \MOS\,\S8.3 (566--587); OSDev Wiki and RFCs \\
 D.\ 64-bit port & Long mode, four-level paging, Multiboot2, \code{syscall}/\code{sysret}, the x86-64 calling convention. Much easier after Stage V: Phase 16 makes the generic code 64-bit clean, and Phase 18 builds a 64-bit MMU on AArch64 & \OSC\,\S9.6 (379--383); Intel SDM Vol.~3A \\
 E.\ Microkernel experiment & Move the ATA driver (or TurkFS) into a user-space server that talks to the kernel with synchronous messages, as MINIX does, and measure the cost & \OSDI\,\S2.5, \S3.4 (112--125, 252--261); \MOS\,\S1.7.3 (65--68) \\
-F.\ Virtualisation & Understand what QEMU and KVM do for you, run Turk-OS with \code{-enable-kvm}, and compare the benchmarks & \OSC Ch.~18 (701--729); \MOS Ch.~7 (471--516) \\
+F.\ Virtualisation & Examine what QEMU and KVM provide, run Turk-OS with \code{-enable-kvm}, and compare the benchmarks & \OSC Ch.~18 (701--729); \MOS Ch.~7 (471--516) \\
 G.\ Loadable kernel modules & Load relocatable ELF objects (\code{.ko}-style) into a running kernel: resolve their symbols against an exported symbol table, apply relocations, call \code{init} and \code{exit}, and move one driver (the RAM disk) into a module, with \code{insmod}, \code{rmmod} and \code{lsmod} commands & \LKP Ch.~4--5 (143--265); \LKD Ch.~17 (337--362) \\
 \end{longtable}
 \end{center}
 
-Stage V deserves a note. Porting forces you to find every place where x86 leaked into supposedly generic code, and
-fixing those leaks improves the whole kernel, including the x86 version. Running your own operating system on a
-processor you designed yourself is a rare thing to be able to say about a student project, and a natural thesis
-topic. Stage V has its own progress scale, from 0 to 100\,\% toward Turk-OS 2.0, so the 100\,\% you reach in this
-phase stays what it is: Turk-OS 1.0, finished.
+Stage V deserves a note. Porting exposes every place where x86 leaked into supposedly generic code, and fixing those
+leaks improves the whole kernel, including the x86 version. Stage V also runs Turk-OS on the project's own RISC-V
+processor, so the kernel and the hardware are validated against each other. Stage V targets Turk-OS 2.0; this phase
+closes with Turk-OS 1.0 complete.
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[Turk-OS 1.0]
 \begin{checklist}
@@ -350,7 +350,7 @@ phase stays what it is: Turk-OS 1.0, finished.
         \code{SECURITY.md} in place.
   \item \code{make release} works from a clean clone; the ISO boots; two clean builds give identical
         \code{kernel.elf} hashes; \code{SHA256SUMS} is published and \code{v1.0} is a signed tag.
-  \item The design reflection is written, and ideally presented.
+  \item The design review is written and reviewed.
 \end{checklist}
 \end{milestonebox}
 
@@ -358,21 +358,20 @@ phase stays what it is: Turk-OS 1.0, finished.
 \begin{enumerate}
   \item Which parts of Turk-OS trust input from user programs, and how is each validated?
   \item Give an example of a TOCTOU bug that could exist in \code{execve}, and explain how copying first prevents it.
-  \item Where would MINIX 3 put your ATA driver, and what would change about a driver bug's consequences?
-  \item What is the most expensive operation you measured, and where does the time go?
+  \item Where would MINIX 3 put the Turk-OS ATA driver, and what would change about a driver bug's consequences?
+  \item What is the most expensive operation measured, and where does the time go?
   \item Which of \MOS chapter 12's principles did Turk-OS follow best, and which did it violate most?
   \item What would break first if Turk-OS ran on two CPUs tomorrow?
 \end{enumerate}
 \end{questionbox}
 
-\section{Closing}
+\section{Summary}
 
-You started this plan knowing basic C and no assembly. Turk-OS 1.0 boots on a PC, protects processes from each other,
+Turk-OS 1.0 boots on a PC, protects processes from each other,
 schedules them preemptively, manages virtual memory with copy-on-write, stores files in a real on-disk format, and runs
-a shell with pipes. More useful than the code is what you now understand: what happens between pressing a key and a
-character appearing, between \code{fork} and \code{exit}, between \code{write} and the disk. The five books on your
-shelf will read differently from now on, because every chapter describes something you have built or decided not to
-build. Keep the journal going, pick a track, or turn the page to Stage V.
+a shell with pipes. Every path through the system, from a key press to a character on the screen, from \code{fork}
+to \code{exit}, from \code{write} to the disk, is implemented, tested and documented. Further work continues in the
+engineering journal, in the extension tracks, and in Stage V.
 
 \nextphase{16}{Portability: an Architecture Layer}
 \booklegend

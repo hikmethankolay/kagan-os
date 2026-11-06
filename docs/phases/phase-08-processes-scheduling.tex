@@ -9,19 +9,19 @@ with its own stack and guard page, a context switch in about ten lines of assemb
 preemptive round-robin scheduling on the timer, \code{sleep_ms} with proper blocking, an idle task that halts the CPU,
 task exit with reaping, and a \code{ps} command. Optionally, a fair scheduler in the style of Linux's CFS.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
 This is where Turk-OS stops being a program and becomes an operating system. A single CPU can only run one
 instruction stream at a time, but by switching between streams quickly enough, the kernel creates the illusion that
 many run at once. \OSTEP calls this \emph{virtualizing the CPU}, and it is the first of its three big ideas.
 
-You will build it in two layers, as the books do. The \textbf{mechanism} is the context switch: saving everything
+Turk-OS builds it in two layers, as the textbooks do. The \textbf{mechanism} is the context switch: saving everything
 that describes one running thread and restoring another. The \textbf{policy} is the scheduler: deciding which thread
-runs next and for how long. You start with kernel threads, which all share the kernel's address space; in Phase 10
-the same machinery switches between user processes with separate address spaces. Take your time with the context
-switch. It is short, it is subtle, and every later phase depends on it.
+runs next and for how long. The first tasks are kernel threads, which all share the kernel's address space; in Phase 10
+the same machinery switches between user processes with separate address spaces. The context switch is short and
+subtle, and every later phase depends on it.
 
-\section{Concepts you need}
+\section{Background}
 
 \subsection{The process abstraction}
 
@@ -54,7 +54,7 @@ resources have not been reclaimed yet.
 
 \subsection{The context switch}
 
-The key insight of \OSTEP chapter 6 is that the kernel regains control of the CPU in only two ways: the running code
+The central point of \OSTEP chapter 6 is that the kernel regains control of the CPU in only two ways: the running code
 calls into it (a system call, or \code{yield} for kernel threads), or a \textbf{timer interrupt} forces it in. Either
 way, the kernel is now running on the current task's kernel stack. To switch, it saves the current task's registers,
 records its stack pointer in its \code{struct task}, loads the next task's stack pointer, and restores that task's
@@ -100,14 +100,14 @@ the priority of tasks that use their whole slice (CPU-bound work), and periodica
 starvation. It favours interactive tasks without knowing anything about them in advance, which is why variants of it
 ran in most UNIX systems. Linux has used a third answer since 2007, the \textbf{Completely Fair Scheduler} (\LKD
 ch.~4): no queues and no boosts, just ``run the task that has had the least weighted CPU time so far''. It is fairer
-and has fewer knobs than MLFQ, which is why the optional Task~8.9 builds it instead. \OSDI\,\S2.4.5 adds the principle to keep policy and mechanism separate, so you can change
-one without touching the other.
+and has fewer knobs than MLFQ, which is why the optional Task~8.9 builds it instead. \OSDI\,\S2.4.5 adds the principle to keep policy and mechanism separate, so that
+one can change without touching the other.
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
 \must & \OSTEP & Ch.~4 \emph{The Abstraction: The Process} & 25--36 & Machine state, process states, the process list. \\
-\must & \OSTEP & Ch.~6 \emph{Limited Direct Execution}, re-read \S6.3 \emph{Switching Between Processes} with its timeline & 52--58 & The exact mechanism of Tasks 8.3--8.6. \\
+\must & \OSTEP & Ch.~6 \emph{Limited Direct Execution}, especially \S6.3 \emph{Switching Between Processes} with its timeline & 52--58 & The exact mechanism of Tasks 8.3--8.6. \\
 \must & \OSTEP & Ch.~7 \emph{Scheduling: Introduction}; Ch.~8 \emph{Scheduling: The Multi-Level Feedback Queue} & 63--86 & Metrics, RR, and the MLFQ rules for Task 8.9. \\
 \must & \LOB & Ch.~14 \emph{Multitasking}: creating processes, cooperative and preemptive scheduling, separate kernel stacks & 73--75 & The x86 specifics, and the difficulties it warns about. \\
 \should & \MOS & \S2.1 \emph{Processes} (model, creation, states, implementation) & 85--97 & Another view, with the interrupt-handling sequence spelled out. \\
@@ -116,7 +116,7 @@ one without touching the other.
 \should & \OSDI & \S2.6.10 \emph{Scheduling in MINIX 3} & 182--185 & A real multi-queue scheduler in a few pages. \\
 \should & \OSC & \S3.1--3.2 \emph{Process Concept}, \emph{Process Scheduling}; \S5.1--5.3 \emph{CPU scheduling} & 106--116, 200--217 & Queues, context switches, algorithms with examples. \\
 \could & \OSTEP & Ch.~9 \emph{Proportional Share}; Ch.~10 \emph{Multiprocessor Scheduling} & 87--108 & Lottery and stride scheduling; what changes with more CPUs. \\
-\could & \MOS & \S2.2 \emph{Threads}, especially \S2.2.5 \emph{Implementing Threads in the Kernel} & 97--113 & What you are building, placed among the alternatives. \\
+\could & \MOS & \S2.2 \emph{Threads}, especially \S2.2.5 \emph{Implementing Threads in the Kernel} & 97--113 & Kernel threads placed among the alternatives. \\
 \could & \OSC & \S5.7 \emph{Operating-System Examples} (Linux CFS, Windows) & 234--244 & How production schedulers do it. \\
 \should & \LKD & Ch.~3, \emph{Process Management} & 23--40 & The task structure, process states and kernel threads in Linux. \\
 \must & \LKD & Ch.~4, \emph{Process Scheduling} (CFS, virtual runtime, wait queues, preemption) & 41--67 & The fair scheduler of Task~8.9. \\
@@ -135,7 +135,7 @@ block anywhere inside the kernel (in the middle of a disk read, for example) and
 \par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux's normal scheduler is CFS, the Completely Fair Scheduler: each task accumulates \textbf{virtual runtime}, weighted by its priority, and the scheduler always runs the task with the smallest one, kept in a red-black tree. Round-robin and MLFQ survive only in the real-time and historical policies. Task~8.9 builds a small CFS.
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{The task structure}
 Define \code{struct task} and a global list of all tasks (for \code{ps}), plus a \code{current} pointer. Keep the
@@ -170,7 +170,7 @@ overwriting the next task's memory. Keep freed slots on a list for reuse.
 \verify{A test task that recurses without limit dies with a page fault whose address is in its own guard page.}
 
 \task{switch\_context}
-Type this in and comment it until you could explain every line to someone else.
+Implement it as below, with a comment on every line.
 
 \begin{lst}{asm}{kernel/arch/i386/switch.s}
 ; void switch_context(uint32_t *save_esp, uint32_t load_esp)
@@ -269,7 +269,7 @@ task_trampoline:
     call ebx                ; entry(arg)
     call task_exit          ; if entry returns, end the task (never returns)
 \end{lst}
-\verify{In GDB, break on \code{task_trampoline}: when it is hit, EBX holds your entry function and ESI its
+\verify{In GDB, break on \code{task_trampoline}: when it is hit, EBX holds the entry function and ESI its
 argument.}
 
 \begin{tipbox}[Portability note]
@@ -324,7 +324,7 @@ void yield(void)
 joins the rotation.}
 
 \task{Preemption from the timer}
-Now let the timer take the CPU away. In the timer handler, charge the tick to \code{current}, and when its slice
+The timer takes the CPU away. In the timer handler, charge the tick to \code{current}, and when its slice
 reaches zero, call \code{schedule()}. One change elsewhere is essential: in \code{isr_handler}, send the EOI to the PIC
 \emph{before} calling an IRQ handler, not after. If the handler switches to another task, the old task's half-finished
 interrupt stays frozen on its stack, and an EOI placed after the call would not be sent until that task runs again.
@@ -385,7 +385,7 @@ and it gets about two thirds. An interactive task (the monitor) still answers at
 
 When a switch goes wrong, the symptom usually appears later, in the new task. Break on \code{switch_context}, step
 through it with \code{stepi}, and check with \code{x/6xw $esp} that the new stack holds exactly what the pops and
-\code{ret} expect. The GDB command \code{info symbol <addr>} tells you where a return address points.
+\code{ret} expect. The GDB command \code{info symbol <addr>} shows where a return address points.
 
 \begin{pitfalls}
 Preemption works once, then the timer stops & EOI sent after the IRQ handler, which switched away & Send the EOI before calling the handler (Task~8.6). \\
@@ -397,12 +397,12 @@ Crash in \code{task_exit} or right after & The task freed its own stack while ru
 Queue corruption under load & \code{schedule()} entered with interrupts enabled, so a timer interrupt re-entered it & Every path into \code{schedule()} disables interrupts first; assert IF is clear at its start. \\
 \end{pitfalls}
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[Turk-OS multitasks]
 \begin{checklist}
   \item Kernel threads run with their own 16\,KiB stacks and guard pages.
-  \item \code{switch_context} and \code{task_trampoline} work; you can explain every instruction.
+  \item \code{switch_context} and \code{task_trampoline} work, with every instruction documented.
   \item The kernel is built with \code{-mgeneral-regs-only}, and every task has its own FPU state, saved and restored on each switch.
   \item At least three threads share the CPU preemptively, without calling \code{yield}.
   \item \code{sleep_ms} blocks properly; the idle task halts the CPU when nothing is ready.
@@ -424,14 +424,14 @@ Queue corruption under load & \code{schedule()} entered with interrupts enabled,
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 
 Implement the multi-level feedback queue of \OSTEP chapter 8, or lottery or stride scheduling from chapter 9, and
-compare their fairness with your vruntime scheduler over a long run. Replace the sorted run queue with a red-black
+compare their fairness with the vruntime scheduler over a long run. Replace the sorted run queue with a red-black
 tree, as Linux does, and measure when it starts to pay off. Add a \code{top}
 command that shows CPU usage per task over the last second. Measure the cost of a context switch by switching back and
-forth a million times and reading the CPU's time-stamp counter (\code{rdtsc}) before and after. If you are heading for
-the SMP track in Phase 15, read \OSTEP chapter 10 now and note what would have to change: one \code{current} per CPU,
+forth a million times and reading the CPU's time-stamp counter (\code{rdtsc}) before and after. For the SMP track in
+Phase 15, \OSTEP chapter 10 describes what has to change: one \code{current} per CPU,
 per-CPU run queues, and real locks.
 
 \nextphase{9}{Synchronization and Concurrency in the Kernel}

@@ -1,110 +1,102 @@
-# Turk-OS
+<div align="center">
 
-**A small UNIX-like operating system for 32-bit x86 PCs, written from scratch in C and NASM, then ported to 32-bit
-RISC-V and 64-bit ARM.**
+<img src="docs/assets/banner.svg" alt="Turk-OS: a UNIX-like operating system for x86, RISC-V and ARM" width="100%"/>
 
-Turk-OS boots with GRUB, runs preemptive multitasking with separate address spaces, loads ELF programs from its own
-on-disk file system, and drops you into a shell with pipes and redirection. It is built one phase at a time, following
-a 19-phase study plan that lives in this repository: sixteen phases to Turk-OS 1.0 on x86, then three more that port
-it to RISC-V and ARM for Turk-OS 2.0. Everything runs in QEMU first; real hardware is optional.
+<br/>
 
-<!-- Keep this block in sync with the milestone tracker at the bottom of the file. -->
-| | |
-|---|---|
-| **Current phase** | Phase 0: Foundations and toolchain |
-| **Overall progress** | 0 % of the way to Turk-OS 1.0 |
-| **Next milestone** | *Workshop ready*: cross toolchain works, skeleton committed, warm-up library passes its tests |
-| **Target** | IA-32 (i386), 32-bit protected mode, legacy BIOS boot; later RV32 and AArch64 on QEMU's `virt` boards (Stage V) |
-| **Languages** | C (gnu11) and NASM (Intel syntax); GNU as for the ports |
-| **Latest release** | none yet (`v1.0` is the goal of Phase 15, `v2.0` of Phase 18) |
-| **License** | [MIT](LICENSE) |
+[![License: MIT](https://img.shields.io/github/license/hikmethankolay/Turk-OS?style=flat-square&color=1B2A4A)](LICENSE)
+[![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-C8102E?style=flat-square)](#project-status)
+[![Platforms](https://img.shields.io/badge/platforms-i386%20%7C%20RV32%20%7C%20AArch64-1B2A4A?style=flat-square)](#supported-platforms)
+[![Language](https://img.shields.io/badge/language-C11%20%2B%20NASM-1F4E9C?style=flat-square)](#coding-conventions)
+[![Design docs](https://img.shields.io/badge/design%20docs-19%20phases-5F6B7A?style=flat-square)](docs/README.md)
+[![Last commit](https://img.shields.io/github/last-commit/hikmethankolay/Turk-OS?style=flat-square&color=5F6B7A)](https://github.com/hikmethankolay/Turk-OS/commits/main)
+
+**A monolithic, UNIX-like kernel and userland written from scratch in C and assembly,
+targeting 32-bit x86 first and RISC-V and AArch64 after.**
+
+[Architecture](#architecture) · [Building](#building) · [Roadmap](#roadmap) · [Design documents](docs/README.md) · [Security model](#security-model)
+
+</div>
 
 ---
+
+## Overview
+
+Turk-OS is a small UNIX-like operating system. It boots through GRUB, runs preemptive multitasking with a separate
+address space per process, loads ELF programs from its own on-disk file system, and provides a POSIX-flavoured system
+call interface, a C library and a shell with pipes, redirection and job control. Every part of it, from the boot
+stub to the shell, is written for this project; nothing is taken from an existing kernel.
+
+The first release targets IA-32 PCs. A second release moves everything that depends on the processor behind one
+architecture interface and runs the same kernel, C library and file-system image on 32-bit RISC-V and 64-bit ARM.
+
+**Design goals**
+
+- **Small and readable.** A monolithic kernel with a modular source tree and a short path from a system call to the
+  code that serves it. Assembly only where C cannot work.
+- **Correct at the protection boundary.** Every user pointer goes through one file, every system call has a
+  documented validation contract, and every claim about isolation is backed by a negative test or a fuzzer.
+- **Portable by construction.** Generic code never sees the CPU; firmware differences end at one boot-information
+  structure filled from Multiboot or a devicetree.
+- **Compatible where it costs nothing.** Linux i386 system call numbers on every architecture, and an on-disk format
+  (MINIX V3) that Linux's `mkfs.minix` and `fsck.minix` create and check.
+- **Tested at every step.** Each phase ends with exit criteria that run headless in QEMU and in CI.
+
+## Project status
+
+> [!NOTE]
+> Turk-OS is in **pre-alpha**. The design, the full development plan and the build environment are in place; the
+> kernel is being implemented phase by phase and does not boot yet. Expect the tree to fill in quickly.
+
+<!-- Keep this block in sync with the roadmap table below. -->
+| | |
+|---|---|
+| **Current phase** | 0 — Foundations and toolchain |
+| **Next milestone** | Verified cross toolchain, source skeleton, tested support library |
+| **Release targets** | `v1.0` complete system on i386 (end of Phase 15) · `v2.0` the same system on RV32 and AArch64 (end of Phase 18) |
+| **Languages** | C (gnu11), NASM (Intel syntax), GNU as for the ports |
+| **License** | [MIT](LICENSE) |
 
 ## Contents
 
-1. [About the project](#about-the-project)
-2. [What Turk-OS 1.0 will do](#what-turk-os-10-will-do)
-   - [Turk-OS 2.0: the ports](#turk-os-20-the-ports)
-3. [Technical decisions](#technical-decisions)
-4. [Architecture](#architecture)
-   - [Layers](#layers)
-   - [Boot sequence](#boot-sequence)
-   - [Virtual memory layout](#virtual-memory-layout)
-   - [System call interface](#system-call-interface)
-   - [TurkFS on-disk format](#turkfs-on-disk-format)
-5. [Roadmap](#roadmap)
-6. [Repository layout](#repository-layout)
-7. [Getting started](#getting-started)
-   - [Host requirements](#host-requirements)
-   - [Build and run](#build-and-run)
-   - [Running QEMU by hand](#running-qemu-by-hand)
-   - [Debugging](#debugging)
-   - [Testing](#testing)
-8. [The study plan](#the-study-plan)
-9. [Books and references](#books-and-references)
-10. [Conventions](#conventions)
-11. [Milestone tracker](#milestone-tracker)
-12. [License](#license)
+- [Features](#features)
+- [Supported platforms](#supported-platforms)
+- [Architecture](#architecture)
+- [Security model](#security-model)
+- [Building](#building)
+- [Running and debugging](#running-and-debugging)
+- [Testing](#testing)
+- [Roadmap](#roadmap)
+- [Documentation](#documentation)
+- [Repository layout](#repository-layout)
+- [Contributing](#contributing)
+- [Reporting security issues](#reporting-security-issues)
+- [License](#license)
 
 ---
 
-## About the project
+## Features
 
-Turk-OS is a learning project. It starts from an empty folder, basic C and no assembly experience, and ends at
-**Turk-OS 1.0**: a small but complete monolithic kernel with a user-space C library, a shell and a set of core
-utilities. Every line of kernel code is written by hand, in the order the study plan gives, and each phase ends with
-a concrete milestone that can be tested.
-
-The plan is built around seven operating-system books (see [Books and references](#books-and-references)). The
-practical steps follow *The little book about OS development*, the theory comes from *Operating Systems: Three Easy
-Pieces* and its companions, and every subsystem is compared with the real MINIX 3 source code printed in
-*Operating Systems: Design and Implementation* and with Linux, through *Linux Kernel Development* and *Linux Kernel
-Programming*. Where the books disagree, the plan follows the newer one when its method is also better for Turk-OS.
-
-**Time budget.** About 43 weeks (roughly ten months) at 10–12 hours a week to Turk-OS 1.0, and about 15 more for
-the ports: roughly 58 weeks in all. Paging (Phase 6), processes (Phase 8), file systems (Phase 13) and the ARM MMU
-(Phase 18) are expected to run over.
-
-**In scope for 1.0:** one CPU, 32-bit x86, BIOS boot through GRUB, text-mode console, IDE disk, a MINIX-compatible
-file system, a POSIX-flavoured system call set, a shell and core utilities.
-
-**Out of scope for 1.0** (these are optional tracks after the release, see [Phase 15](docs/pdf/phase-15-hardening-release.pdf)):
-graphics, multiprocessor support, networking, a 64-bit x86 port, a microkernel experiment and virtualisation.
-
-**After 1.0, Stage V** (Phases 16–18) ports Turk-OS to two more architectures: 32-bit RISC-V on QEMU's `virt` board
-(and optionally a self-designed RV32IMC core), then 64-bit ARM on QEMU's `virt` board (and optionally a Raspberry
-Pi 4). The result is **Turk-OS 2.0**: one source tree whose kernel and userland boot on all three. See
-[Turk-OS 2.0: the ports](#turk-os-20-the-ports).
-
----
-
-## What Turk-OS 1.0 will do
-
-The table lists what the finished system contains and which phase builds each part.
+Planned for `v1.0`, with the phase that delivers each part.
 
 | Area | Features | Phase |
-|---|---|---|
-| **Boot** | Multiboot 1 kernel loaded by GRUB 2 (bootable ISO from `grub-mkrescue`) or by `qemu -kernel`; kernel linked at `0xC0100000` in the higher half | 1, 6 |
-| **Console and diagnostics** | VGA text driver (colours, scrolling), 16550 serial logging, `kprintf` with log levels and an in-memory log ring buffer, `panic`, `ASSERT`, a crash report for every CPU exception with a full register dump, symbolised backtraces | 2, 3, 15 |
-| **Interrupts and time** | Own GDT and IDT, 32 exception stubs, 8259 PIC remapped to vectors 32–47, 100 Hz PIT timer with uptime and `sleep_ms`, PS/2 keyboard with shift, caps lock and an optional Turkish Q layout | 3, 4 |
-| **Kernel monitor** | Built-in prompt with `help`, `clear`, `uptime`, `mem`, `dmesg`, `crash`, `reboot`, `ps`, `slabinfo`, `test`, `lsblk`, `hexdump` | 4, 5, 7, 8, 12 |
-| **Physical memory** | Multiboot memory map parser, a bitmap page-frame allocator replaced by a buddy allocator behind the same interface, per-frame reference counts | 5, 11 |
-| **Virtual memory** | Two-level paging, direct map of the first 512 MiB, VMM API (`vmm_map`, `vmm_unmap`, `vmm_virt_to_phys`), page-fault reports that explain every fault | 6 |
-| **Kernel heap** | `kmalloc`, `kfree`, `kcalloc`, `krealloc`: slab caches for requests up to 2 KiB, a first-fit heap (splitting, coalescing, 16-byte alignment) for larger ones, magic numbers and `heap_check()` | 7 |
-| **Processes** | Kernel threads with guard pages, context switch in about ten lines of assembly, preemptive round-robin scheduler (optional CFS-style fair scheduler), idle task, task reaping | 8 |
-| **Synchronisation** | Nesting `irq_save`/`irq_restore`, `xchg` spinlocks, wait queues without lost wake-ups, mutexes, counting semaphores, condition variables, saturating `refcount_t`, a written lock order checked at run time in debug builds | 9 |
-| **User mode** | TSS, ring 3, one page directory per process sharing the kernel half, ELF loader, `crt0`, every user pointer checked by `copy_from_user`/`copy_to_user` | 10 |
-| **UNIX process model** | `fork` with copy-on-write, `execve` with `argv`/`envp`, `waitpid`, `exit` with zombies and orphan reparenting, lazy `brk`, stacks that grow on demand, `kill`, `SIGSEGV`, `SIGINT`, `init` as PID 1 | 11 |
-| **Storage** | ATA PIO driver (polling, then interrupt-driven), block device layer, MBR partitions, RAM disk from a boot module, buffer cache with LRU replacement and write-back | 12 |
-| **File systems** | VFS with mount points and path lookup, 32 descriptors per process, read-only root from a ustar archive, `devfs` (`/dev/tty`, `/dev/null`, `/dev/zero`, `/dev/hda`, `/dev/hdb`), writable **TurkFS** that Linux's `fsck.minix` accepts | 13 |
-| **Userland** | Turk-libc (system call wrappers with `errno`, strings, `malloc`, buffered `stdio` with `printf`), pipes, terminal line discipline (echo, line editing, Ctrl+C, Ctrl+D), ANSI escape codes | 14 |
-| **Shell** | `tsh`, the Turk shell: pipelines, `<`, `>`, `>>`, background jobs with `&`, `;`, quoting, built-ins `cd`, `pwd`, `exit`, `export`, `help`, `PATH` lookup | 14 |
-| **Core utilities** | `echo`, `cat`, `wc`, `hexdump`, `ls`, `mkdir`, `rm`, `cp`, `mv`, `touch`, `ps`, `kill`, `sleep`, `uptime`, `clear`, `sync`, `shutdown` | 14 |
-| **Security** | System call fuzzer, audited user/kernel boundary, `-fstack-protector-strong`, read-only kernel code, user and group IDs, file permissions, `/etc/passwd` and `login` | 15 |
-| **Release** | Benchmark suite (null system call, context switch, process creation, file throughput, boot time), `make release`, bootable ISO, `v1.0` tag | 15 |
-
-This is the Phase 14 milestone, taken from the plan's own tests:
+|---|---|:---:|
+| **Boot** | Multiboot 1 kernel loaded by GRUB 2 (bootable ISO) or `qemu -kernel`; higher-half kernel linked at `0xC0100000` | 1, 6 |
+| **Console and diagnostics** | VGA text and 16550 serial consoles, format-checked `kprintf` with log levels and a `dmesg` ring buffer, `panic`/`ASSERT`, a register dump for every CPU exception, symbolised backtraces | 2, 3, 15 |
+| **Interrupts and time** | GDT and IDT, 32 exception handlers, 8259 PIC remapped to vectors 32–47, 100 Hz PIT with `sleep_ms`, PS/2 keyboard with an optional Turkish Q layout | 3, 4 |
+| **Physical memory** | Validated Multiboot memory map, buddy page-frame allocator, per-frame reference counts | 5, 11 |
+| **Virtual memory** | Two-level paging, 512 MiB direct map, read-only kernel text and rodata, a VMM API, decoded page-fault reports | 6 |
+| **Kernel heap** | Slab caches up to 2 KiB and a first-fit heap above, with integrity checks and allocation-failure injection | 7 |
+| **Processes** | Kernel threads with guarded stacks, per-task FPU state, a preemptive round-robin scheduler (optional CFS-style), idle task and reaping | 8 |
+| **Synchronisation** | Nesting interrupt control, spinlocks, wait queues, mutexes, semaphores, condition variables, saturating `refcount_t`, a lock order checked at run time | 9 |
+| **User mode** | Ring 3 with one page directory per process, a validating ELF loader, checked user-memory access, stack protector | 10 |
+| **Process model** | `fork` with copy-on-write, `execve` with `argv`/`envp`, `waitpid`, zombies and reparenting, lazy `brk`, growable stacks, signals, `init` as PID 1 | 11 |
+| **Storage** | ATA PIO driver (polled and interrupt-driven), block layer, validated MBR partitions, RAM disk, write-back buffer cache with LRU | 12 |
+| **File systems** | VFS with mount points, 64 descriptors per process with close-on-exec, ustar root archive, `devfs`, and **TurkFS**, a writable MINIX V3 file system that rejects corrupted images | 13 |
+| **Userland** | Turk-libc (`errno`, strings, `malloc`, buffered `stdio`), pipes, a terminal line discipline, resource limits | 14 |
+| **Shell and utilities** | `tsh` with pipelines, redirection, background jobs, quoting and `PATH` lookup; `ls`, `cat`, `cp`, `mv`, `rm`, `mkdir`, `ps`, `kill`, `wc`, `hexdump` and more | 14 |
+| **Security** | Users and groups, file and device permissions, sessions and terminal ownership, `login`; see [Security model](#security-model) | 10–15 |
+| **Release engineering** | Benchmark suite, `make release`, reproducible builds checked by hash, `SHA256SUMS`, signed tags | 15 |
 
 ```text
 turk@os:/$ echo merhaba | wc -c
@@ -116,52 +108,21 @@ turk@os:/$ sleep 5 &
 turk@os:/$
 ```
 
-### Turk-OS 2.0: the ports
+## Supported platforms
 
-Stage V keeps every feature above and changes where it runs. The generic kernel stays one body of code; everything
-that depends on the processor or the board moves behind one interface, `include/arch.h`, with one backend per
-architecture.
+All three targets run the same generic kernel, the same Turk-libc and the same TurkFS image. Real hardware is
+supported after the emulated target works.
 
-| | x86 (Turk-OS 1.0) | RISC-V (Phase 17) | ARM (Phase 18) |
+| | **i386** (`v1.0`) | **RV32** (`v2.0`) | **AArch64** (`v2.0`) |
 |---|---|---|---|
-| **Processor** | IA-32, ring 0 / ring 3 | RV32 (`rv32imac`), S-mode / U-mode | AArch64 (ARMv8-A), EL1 / EL0 |
-| **Machine** | `qemu-system-i386` PC | `qemu-system-riscv32 -machine virt`; optionally the Timur-RV32IMC core | `qemu-system-aarch64 -machine virt -cpu cortex-a72`; optionally a Raspberry Pi 4 |
-| **Firmware and discovery** | BIOS + GRUB, Multiboot | OpenSBI in M-mode, devicetree | QEMU or the Pi firmware, devicetree |
-| **Traps and system calls** | IDT, `int 0x80` (number in `EAX`) | `stvec`, `ecall` (number in `a7`) | `VBAR_EL1`, `svc #0` (number in `x8`) |
+| **Processor** | IA-32, ring 0 / ring 3 | `rv32imac`, S-mode / U-mode | ARMv8-A, EL1 / EL0 |
+| **Machine** | `qemu-system-i386`, legacy-BIOS PCs | `qemu-system-riscv32 -machine virt`; a custom RV32IMC core | `qemu-system-aarch64 -machine virt`; Raspberry Pi 4 |
+| **Firmware and discovery** | BIOS + GRUB, Multiboot | OpenSBI (M-mode), devicetree | QEMU or Pi firmware, devicetree |
+| **System call trap** | `int 0x80` (number in `EAX`) | `ecall` (number in `a7`) | `svc #0` (number in `x8`) |
 | **Interrupts and timer** | 8259 PIC, 8254 PIT | PLIC, SBI timer | GICv2, generic timer |
-| **Paging** | Two-level, kernel at `0xC0000000` | Sv32 (two-level), kernel at `0xC0000000` | 4 KiB granule, 39-bit addresses, kernel in the `TTBR1` high half |
-| **Console and disk** | VGA, 16550 by port I/O, ATA | 16550 memory-mapped, virtio-blk | PL011, virtio-blk |
-
-All three use the same Linux i386 system call numbers, the same Turk-libc and the same TurkFS image. Phase 16
-prepares the ground on x86 alone: it finds every place where x86 leaked into generic code, defines the architecture
-interface, adds a devicetree parser and `make ARCH=`, and makes the generic code 64-bit clean.
-
----
-
-## Technical decisions
-
-These choices hold for the whole project. Each one follows from the books the plan is based on.
-
-| Decision | Choice | Why |
-|---|---|---|
-| Target CPU | IA-32 (i386), 32-bit protected mode, BIOS boot | The practical guide, MINIX 3 and the Intel examples in the theory books are all 32-bit x86. Two-level paging is the simplest real MMU to learn. |
-| Ports (Stage V) | After 1.0: RV32 with Sv32 paging on QEMU `virt` (OpenSBI firmware), then AArch64 at EL1 on QEMU `virt` | One architecture learned deeply comes first, and porting afterwards exposes every place x86 leaked into generic code. RISC-V comes first because it keeps the word size and two-level paging; ARM then adds 64 bits and a richer exception and memory model. |
-| Boot loader | GRUB through Multiboot 1; `qemu -kernel` for quick runs | Writing a boot loader is a detour. Phase 1 writes one 512-byte boot sector to learn how booting works, then GRUB takes over. |
-| Languages | C (gnu11) and NASM (Intel syntax) | Assembly only where C can't work: the entry point, descriptor table loads, interrupt stubs, the context switch and entering user mode. Under 5 % of the code. |
-| Toolchain | `i686-elf` cross GCC and binutils, GNU Make, Git | A cross compiler never assumes a Linux target, which prevents a whole family of confusing bugs. |
-| Emulator and debugger | QEMU and GDB (remote stub); Bochs optional | QEMU is fast, scriptable and has a monitor for registers and page tables. |
-| Kernel structure | Monolithic, modular source tree | Simplest to get right for a first kernel. MINIX's microkernel is studied as a contrast. |
-| On-disk file system | MINIX V3 layout with 1 KiB blocks, named TurkFS | Fully described in *Operating Systems: Design and Implementation*, with source. Linux's `mkfs.minix -3` and `fsck.minix` create and check the images, and Linux can mount them. |
-| System call ABI | `int 0x80`, Linux i386 call numbers; the ports keep the numbers and trap with `ecall` (RISC-V) or `svc #0` (ARM) | Any Linux i386 reference table matches Turk-OS's, and one Turk-libc serves all three architectures. |
-| Device discovery on the ports | A flattened devicetree, parsed by `lib/fdt.c` into the same `struct bootinfo` that Multiboot fills on x86 | Both `virt` boards and the Raspberry Pi describe their memory and devices this way; generic code never sees the difference. |
-| Testing | In-kernel `ktest` suites, headless QEMU, `isa-debug-exit` | `make test` boots, runs every test and exits with a pass or fail code, so regressions show up at once. |
-
-**Why monolithic when one of the books is about a microkernel?** In a monolithic kernel, drivers, the file system and
-the scheduler all run in ring 0 and call each other as plain C functions. In a microkernel like MINIX 3 they run as
-separate user-space processes that talk by message passing. Microkernels isolate faults better, but they need IPC,
-servers and a protocol for every operation before anything works. For a first kernel, plain function calls keep the
-path from idea to running code short. The MINIX code is still read in every phase, and Phase 15 offers an optional
-experiment that moves one driver into a user-space server.
+| **Paging** | Two-level, kernel at `0xC0000000` | Sv32, kernel at `0xC0000000` | 4 KiB granule, 39-bit VA, kernel in `TTBR1` |
+| **Memory protection** | Read-only kernel text (32-bit paging has no NX) | W^X via PTE R/W/X; `SUM` only during user copies | W^X via `PXN`/`UXN`; optional PAN |
+| **Console and disk** | VGA, 16550, ATA | 16550 (MMIO), virtio-blk | PL011, virtio-blk |
 
 ---
 
@@ -169,73 +130,69 @@ experiment that moves one driver into a user-space server.
 
 ### Layers
 
-| Layer | Components | Built in |
-|---|---|---|
-| **User space (ring 3)** | `init`, `tsh` shell, core utilities | P11, P14 |
-| | Turk-libc: `stdio`, `malloc`, `string`, system call wrappers | P14 |
-| | Your own ELF programs | P10, P11 |
-| **System call interface** | `int 0x80`, argument checks, `copy_from_user` / `copy_to_user` | P10 |
-| **Kernel (ring 0)** | Processes and scheduler: tasks, `fork`, `exec`, signals | P8, P11 |
-| | Memory: PMM, VMM, heap, copy-on-write | P5–P7, P11 |
-| | VFS: tarfs, TurkFS, devfs, pipes | P13, P14 |
-| | Synchronisation: spinlocks, mutexes, semaphores, wait queues | P9 |
-| | Drivers: VGA, serial, keyboard, PIT, tty, ATA, RAM disk, block layer, buffer cache | P2, P4, P12, P14 |
-| | i386 layer: Multiboot entry, GDT, IDT and ISR stubs, PIC, TSS, paging, context switch | P1–P4, P6, P8, P10 |
-| **Hardware (QEMU)** | CPU, RAM, VGA, 8259 PIC, 8254 PIT, 8042 keyboard controller, IDE disk, 16550 UART | |
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.svg">
+  <img src="docs/assets/architecture.svg" alt="Six layers of Turk-OS: user space in ring 3; the system call boundary, highlighted, where every user pointer passes through uaccess.c; kernel services such as processes, memory, the VFS and locks; drivers; the architecture layer; and the hardware." width="100%">
+</picture>
 
-In Stage V the i386 layer becomes one of three backends behind `include/arch.h` (P16): `kernel/arch/riscv32`
-(OpenSBI entry, `stvec` traps, PLIC, SBI timer, Sv32 paging; P17) and `kernel/arch/aarch64` (EL1 vectors, GICv2,
-generic timer, the AArch64 MMU; P18). The drivers gain a memory-mapped 16550, a PL011 UART and a virtio-blk disk.
-The boot sequence, memory layout and system call details below describe x86; the Phase 17 and 18 documents give
-the RISC-V and ARM equivalents.
+The kernel is monolithic: drivers, the file system and the scheduler run in ring 0 and call each other directly.
+From `v2.0` the i386 layer is one of three backends behind `include/arch.h`, next to `kernel/arch/riscv32` and
+`kernel/arch/aarch64`; the generic kernel above it does not change.
 
 ### Boot sequence
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/boot-dark.svg">
+  <img src="docs/assets/boot.svg" alt="Boot sequence: the BIOS loads GRUB 2, GRUB jumps to loader.s with the Multiboot magic in EAX, loader.s enables paging and moves to the higher half, calls kmain, kmain brings up the subsystems and starts init as PID 1." width="100%">
+</picture>
+
+<details>
+<summary><b>Boot sequence in detail</b></summary>
+
 1. **BIOS** (SeaBIOS in QEMU) finds a bootable device and hands control to GRUB.
-2. **GRUB 2** reads `boot/grub.cfg`, loads `kernel.elf` at physical 1 MiB, loads any `module` lines (user programs,
-   the root archive, the symbol table), and jumps to the kernel's physical entry point with `EAX = 0x2BADB002` and
-   `EBX` pointing at the Multiboot information structure.
-3. **`boot/loader.s`** starts with the Multiboot header (magic `0x1BADB002`, flags, checksum) in its own section,
-   placed first by `link.ld`. Paging is still off, so it runs at physical addresses. It loads a boot page directory
-   of 4 MiB pages that maps physical 0–4 MiB at 0 (temporarily) and physical 0–512 MiB at `0xC0000000`, enables
-   `CR4.PSE`, `CR0.PG` and `CR0.WP`, and jumps into the higher half. There it drops the identity mapping, switches to
-   its 16 KiB kernel stack and calls `kmain(magic, mbi)`.
-4. **`kmain`** brings the system up in phase order: VGA and serial output, GDT and IDT, PIC, timer and keyboard,
-   memory map and frame allocator, paging and the direct map, heap, scheduler, TSS and system calls, block devices,
-   file systems.
-5. **`init`** (PID 1) opens `/dev/tty` as descriptors 0, 1 and 2, starts `tsh` (after `login` from Phase 15), starts a
-   new shell whenever one exits, and reaps orphaned processes.
+2. **GRUB 2** reads `boot/grub.cfg`, loads `kernel.elf` at physical 1 MiB together with its modules (user programs,
+   the root archive, the symbol table), and jumps to the entry point with `EAX = 0x2BADB002` and `EBX` pointing at the
+   Multiboot information structure.
+3. **`boot/loader.s`** carries the Multiboot header. Running at physical addresses, it installs a boot page
+   directory that maps 0–4 MiB at 0 (temporarily) and 0–512 MiB at `0xC0000000`, enables `CR4.PSE`, `CR0.PG` and
+   `CR0.WP`, jumps into the higher half, drops the identity mapping, switches to its kernel stack and calls
+   `kmain(magic, mbi)`.
+4. **`kmain`** brings the system up in dependency order: consoles, GDT and IDT, PIC, timer and keyboard, memory map
+   and frame allocator, paging, heap, scheduler, TSS and system calls, block devices, file systems.
+5. **`init`** (PID 1) opens `/dev/tty` as descriptors 0–2, runs `login` and the shell, and reaps orphans.
 
-With the kernel command line `test`, `kmain` runs every `ktest` suite instead and exits QEMU with the result.
+With the kernel command line `test`, `kmain` runs every in-kernel test suite instead and exits QEMU with the result.
 
-### Virtual memory layout
+</details>
 
-Turk-OS uses the Linux-style 3 GiB / 1 GiB split. The kernel half is shared by every page directory, so interrupts
-and system calls always find the kernel mapped.
+### Virtual memory layout (i386)
+
+A 3 GiB / 1 GiB split. The kernel half is shared by every page directory, so interrupts and system calls always find
+the kernel mapped.
 
 | Virtual range | Size | Contents |
 |---|---|---|
-| `0x00000000`–`0x003FFFFF` | 4 MiB | Unmapped, so `NULL` and small offsets from it fault |
-| `0x00400000`– | | Program image from the ELF file (`.text`, `.rodata`, `.data`, `.bss`), linked by `user/user.ld` |
-| (above the image) | | User heap, growing up with `brk` (Phase 11) |
-| ...–`0xBFFFFFFF` | | User stack, starting at `0xBFFFC000` and growing down on demand (Phase 11) |
-| `0xC0000000`–`0xDFFFFFFF` | 512 MiB | **Direct map** of physical 0–512 MiB. Kernel image at `0xC0100000`, VGA buffer at `0xC00B8000`. `P2V`/`V2P` convert addresses. |
-| `0xE0000000`–`0xEFFFFFFF` | 256 MiB | Kernel heap (Phase 7) |
-| `0xF0000000`–`0xFFBFFFFF` | | Kernel stacks (with guard pages) and other kernel mappings |
-| `0xFFC00000`–`0xFFFFFFFF` | 4 MiB | Reserved (for a recursive mapping, if ever wanted) |
+| `0x00000000`–`0x003FFFFF` | 4 MiB | Never mapped: `NULL` and small offsets fault, and the ELF loader refuses segments here |
+| `0x00400000`– | | Program image (`.text`, `.rodata`, `.data`, `.bss`) |
+| (above the image) | | User heap, grown by `brk` and faulted in on demand |
+| …–`0xBFFFFFFF` | | User stack from `0xBFFFC000`, growing down on demand |
+| `0xC0000000`–`0xDFFFFFFF` | 512 MiB | Direct map of physical 0–512 MiB; kernel image at `0xC0100000` (text and rodata read-only) |
+| `0xE0000000`–`0xEFFFFFFF` | 256 MiB | Kernel heap |
+| `0xF0000000`–`0xFFBFFFFF` | | Kernel stacks with guard pages, other kernel mappings |
+| `0xFFC00000`–`0xFFFFFFFF` | 4 MiB | Reserved |
 
-Kernel page tables for `0xE0000000`–`0xFFBFFFFF` are allocated in advance, so a mapping made in one address space
-shows up in all of them. Page-table entry bit 9 (`0x200`, one of the three bits free for the OS) marks copy-on-write
-pages, and `CR0.WP` is set so the kernel obeys read-only pages too.
+Kernel page tables above `0xE0000000` are pre-allocated so every address space sees new kernel mappings. PTE bit 9
+marks copy-on-write pages, and `CR0.WP` makes the kernel obey read-only user pages.
 
 ### System call interface
 
-A user program loads the call number into `EAX` and up to three arguments into `EBX`, `ECX` and `EDX`, then executes
-`int 0x80`. Vector `0x80` is a 32-bit trap gate with DPL 3, so ring 3 may use it and interrupts stay enabled during
-the call. The kernel returns the result in `EAX`; errors come back as a negative `errno` value (for example
-`-ENOSYS` for an unknown call), which Turk-libc turns into `-1` plus `errno`.
+The call number goes in `EAX` and up to three arguments in `EBX`, `ECX` and `EDX`; `int 0x80` enters the kernel
+through a DPL-3 trap gate. Results come back in `EAX`, errors as a negative `errno` that Turk-libc converts to `-1`
+plus `errno`. Every user pointer is copied through `copy_from_user`/`copy_to_user`, which check the range, the
+page permissions and copy-on-write state before touching memory.
 
-Turk-OS uses the **Linux i386 numbers**. The calls the plan introduces, by phase:
+<details>
+<summary><b>System calls (Linux i386 numbering)</b></summary>
 
 | No. | Call | Phase | | No. | Call | Phase |
 |---:|---|:---:|---|---:|---|:---:|
@@ -249,256 +206,234 @@ Turk-OS uses the **Linux i386 numbers**. The calls the plan introduces, by phase
 | 10 | `unlink` | 13 | | 46 | `setgid` | 15 |
 | 11 | `execve` | 11 | | 47 | `getgid` | 15 |
 | 12 | `chdir` | 13 | | 54 | `ioctl` | 14 |
-| 19 | `lseek` | 13 | | 63 | `dup2` | 13 |
-| 20 | `getpid` | 10 | | 64 | `getppid` | 11 |
-| 23 | `setuid` | 15 | | 106 | `stat` | 13 |
-| 24 | `getuid` | 15 | | 108 | `fstat` | 13 |
+| 19 | `lseek` | 13 | | 55 | `fcntl` | 13 |
+| 20 | `getpid` | 10 | | 63 | `dup2` | 13 |
+| 23 | `setuid` | 15 | | 64 | `getppid` | 11 |
+| 24 | `getuid` | 15 | | 106 | `stat` | 13 |
+| | | | | 108 | `fstat` | 13 |
 | | | | | 141 | `getdents` | 13 |
 | | | | | 158 | `sched_yield` | 10 |
-| | | | | 162 | `nanosleep` (argument in milliseconds) | 10 |
+| | | | | 162 | `nanosleep` (milliseconds) | 10 |
 | | | | | 183 | `getcwd` | 13 |
 
-Phase 14 also adds a `getprocs` call for `ps`, which has no Linux equivalent. The full reference, with arguments,
-return values and errors, goes into `docs/syscalls.md` in Phase 10.
+`getprocs`, used by `ps`, has no Linux equivalent. The reference with arguments and errors is `docs/syscalls.md`; the
+validation contract of each call is `docs/security/syscalls.md`.
+
+</details>
 
 ### TurkFS on-disk format
 
-TurkFS is the MINIX V3 file system with 1 KiB blocks, exactly as `mkfs.minix -3` lays it out. On an 8 MiB image:
+TurkFS is the MINIX V3 file system with 1 KiB blocks, byte-compatible with Linux's `mkfs.minix -3`.
 
-| Block(s) | Region |
+| Block(s) on an 8 MiB image | Region |
 |---|---|
 | 0 | Boot block (unused) |
-| 1 | Superblock: inode and zone counts, bitmap sizes, first data zone, magic `0x4D5A`, block size 1024 |
-| 2 | Inode bitmap |
-| 3 | Zone bitmap |
-| 4–174 | Inode table: 64-byte inodes, 16 per block (2736 inodes) |
+| 1 | Superblock: inode and zone counts, bitmap sizes, first data zone, magic `0x4D5A` |
+| 2 · 3 | Inode bitmap · zone bitmap |
+| 4–174 | Inode table: 64-byte inodes, 16 per block |
 | 175–8191 | Data zones: file contents, directories, indirect blocks |
 
-- **Inode** (64 bytes): mode, link count, uid, gid, size, access/modify/change times, and ten zone pointers: seven
-  direct, one single indirect (256 more zones), one double indirect (256 × 256 zones) and one unused triple indirect.
-  Files larger than 263 KiB need the double indirect block.
-- **Directory entry** (64 bytes): a 32-bit inode number and a 60-byte name. Inode 0 marks an empty slot.
-- **Bitmaps:** bit *n* of the inode map is inode *n*; bit *n* of the zone map is zone *n* + `s_firstdatazone` − 1;
-  bit 0 of both is reserved.
-- **Crash safety:** writes are ordered as allocate, initialise, then link, so a crash leaves at worst leaked blocks.
-  `fsck.minix -f` on the host checks the result.
+Inodes hold seven direct, one single-indirect and one double-indirect zone pointer; directory entries are a 32-bit
+inode number and a 60-byte name. The superblock is validated at mount and every inode and zone number is
+bounds-checked before use, so a corrupted image is refused rather than trusted. Writes are ordered allocate →
+initialise → link, so a crash leaves at worst leaked blocks, which `fsck.minix` repairs.
 
 ---
 
-## Roadmap
+## Security model
 
-Nineteen phases in five stages. Stages I–IV (Phases 0–15) lead to Turk-OS 1.0; Stage V (Phases 16–18) ports it to
-RISC-V and ARM and ends at Turk-OS 2.0. Each phase depends on everything before it and has its own PDF in
-[`docs/pdf/`](docs/pdf/).
+The goal for `v1.0` is concrete: **no unprivileged program and no malformed disk image can crash or take over the
+kernel**, and every claim of that kind is backed by a test. Physical attackers, the boot chain, networks, malicious
+hardware and side channels are out of scope; the threat model in `docs/security/threat-model.md` records the
+boundaries and the residual risks.
 
-```mermaid
-flowchart LR
-    subgraph S1["Stage I · Bare metal (0–28 %)"]
-        P0["P0 Foundations"] --> P1["P1 Assembly & boot"] --> P2["P2 Getting to C"] --> P3["P3 GDT & IDT"] --> P4["P4 Hardware IRQs"]
-    end
-    subgraph S2["Stage II · Memory (28–48 %)"]
-        P5["P5 Physical memory"] --> P6["P6 Paging"] --> P7["P7 Kernel heap"]
-    end
-    subgraph S3["Stage III · Processes and protection (48–77 %)"]
-        P8["P8 Processes"] --> P9["P9 Synchronization"] --> P10["P10 User mode"] --> P11["P11 Process API"]
-    end
-    subgraph S4["Stage IV · Persistence and userland (77–100 %)"]
-        P12["P12 Storage"] --> P13["P13 File systems"] --> P14["P14 Userland"] --> P15["P15 Turk-OS 1.0"]
-    end
-    subgraph S5["Stage V · Ports (own scale toward 2.0)"]
-        P16["P16 Portability layer"] --> P17["P17 RISC-V port"] --> P18["P18 ARM port, Turk-OS 2.0"]
-    end
-    P4 --> P5
-    P7 --> P8
-    P11 --> P12
-    P15 --> P16
-```
-
-| # | Phase | You finish with | Weeks | Difficulty | Progress | Document |
-|---:|---|---|:---:|:---:|:---:|---|
-| 0 | Foundations and toolchain | Cross compiler, QEMU, GDB and a Git repo; C warm-up library with unit tests | 2–3 | ★☆☆☆☆ | 0 → 5 % | [PDF](docs/pdf/phase-00-foundations.pdf) |
-| 1 | x86 assembly and booting | A 512-byte boot sector; a Multiboot kernel that GRUB and QEMU boot | 2–3 | ★★★☆☆ | 5 → 10 % | [PDF](docs/pdf/phase-01-assembly-and-boot.pdf) |
-| 2 | Getting to C: screen, serial, kprintf | VGA text driver, serial logging, `kprintf`, `panic` | 1–2 | ★★☆☆☆ | 10 → 16 % | [PDF](docs/pdf/phase-02-output-drivers.pdf) |
-| 3 | Segmentation, IDT and exceptions | Own GDT and IDT; register dump on every CPU exception | 2 | ★★★★☆ | 16 → 22 % | [PDF](docs/pdf/phase-03-gdt-idt-exceptions.pdf) |
-| 4 | Hardware interrupts | PIC, 100 Hz timer, keyboard driver, kernel command monitor | 2 | ★★★☆☆ | 22 → 28 % | [PDF](docs/pdf/phase-04-hardware-interrupts.pdf) |
-| 5 | Physical memory management | Memory map parsing, bitmap then buddy page-frame allocator, first kernel tests | 2 | ★★★☆☆ | 28 → 34 % | [PDF](docs/pdf/phase-05-physical-memory.pdf) |
-| 6 | Paging and the higher-half kernel | Paging on, kernel at `0xC0000000`, VMM API, page-fault reports | 2–3 | ★★★★★ | 34 → 42 % | [PDF](docs/pdf/phase-06-paging-higher-half.pdf) |
-| 7 | Kernel heap and data structures | `kmalloc`/`kfree` on slab caches, intrusive lists, `make test` in headless QEMU | 2 | ★★★☆☆ | 42 → 48 % | [PDF](docs/pdf/phase-07-kernel-heap.pdf) |
-| 8 | Processes and scheduling | Kernel threads, context switch, preemptive round-robin (optional fair scheduler), sleep | 3 | ★★★★★ | 48 → 56 % | [PDF](docs/pdf/phase-08-processes-scheduling.pdf) |
-| 9 | Synchronization | Spinlocks, wait queues, mutexes, semaphores, `refcount_t`, lock-order checking | 2 | ★★★★☆ | 56 → 62 % | [PDF](docs/pdf/phase-09-synchronization.pdf) |
-| 10 | User mode and system calls | TSS, ring 3, `int 0x80`, ELF loader, first user programs | 3 | ★★★★★ | 62 → 70 % | [PDF](docs/pdf/phase-10-user-mode-syscalls.pdf) |
-| 11 | Process API | `fork` (copy-on-write), `exec`, `wait`, `exit`, `brk`, basic signals | 3 | ★★★★★ | 70 → 77 % | [PDF](docs/pdf/phase-11-process-api.pdf) |
-| 12 | Storage | ATA PIO driver, block layer, MBR partitions, buffer cache | 2 | ★★★★☆ | 77 → 83 % | [PDF](docs/pdf/phase-12-storage-drivers.pdf) |
-| 13 | File systems | VFS, file descriptors, tar initrd, writable TurkFS | 3–4 | ★★★★★ | 83 → 90 % | [PDF](docs/pdf/phase-13-file-systems.pdf) |
-| 14 | Userland | Turk-libc, pipes, tty line discipline, `tsh` shell, coreutils | 3 | ★★★★☆ | 90 → 96 % | [PDF](docs/pdf/phase-14-userland-shell.pdf) |
-| 15 | Hardening and release | Fuzzing, permissions, benchmarks, docs, v1.0 ISO; optional tracks | 3–4+ | ★★★★☆ | 96 → 100 % | [PDF](docs/pdf/phase-15-hardening-release.pdf) |
-| 16 | Portability: an architecture layer | x86 behind `include/arch.h`, `make ARCH=`, `struct bootinfo`, 64-bit-clean generic code, a devicetree parser; i386 still passes `make test` | 2–3 | ★★★☆☆ | V: 0 → 20 % | [PDF](docs/pdf/phase-16-portability-layer.pdf) |
-| 17 | The RISC-V port | Turk-OS on `qemu-system-riscv32 -machine virt`: OpenSBI, Sv32, PLIC, virtio-blk, boot to `tsh`; optionally your own RV32IMC core | 5–6+ | ★★★★☆ | V: 20 → 60 % | [PDF](docs/pdf/phase-17-riscv-port.pdf) |
-| 18 | The ARM port | Turk-OS on `qemu-system-aarch64 -machine virt`: EL1, GICv2, generic timer, MMU, LP64 userland; v2.0 on three architectures; optionally a Raspberry Pi 4 | 5–6+ | ★★★★★ | V: 60 → 100 % | [PDF](docs/pdf/phase-18-arm-port.pdf) |
-
-Stage V percentages (marked V) are measured toward Turk-OS 2.0, on their own scale; the 1.0 scale of Phases 0–15
-does not change. The [roadmap PDF](docs/pdf/00-roadmap.pdf) has the full picture: phase map, calendar timeline, risk
-table and the getting-unstuck protocol.
-
-**After 1.0**, besides Stage V, Phase 15 offers optional tracks that can be combined:
-
-| Track | What it adds |
-|---|---|
-| A. Graphics and Turkish text | Linear framebuffer, a PSF font with the full Turkish alphabet (ğ, ş, ı, İ, Ğ, Ş), PS/2 mouse, a simple window system |
-| B. Multiprocessor (SMP) | ACPI MADT, local and I/O APIC, starting the other CPUs, per-CPU run queues, TLB shootdown |
-| C. Networking | PCI, an e1000 or RTL8139 driver, Ethernet, ARP, IPv4, ICMP, UDP, minimal TCP, sockets |
-| D. 64-bit port | Long mode, four-level paging, Multiboot2, `syscall`/`sysret`; much easier after Stage V |
-| E. Microkernel experiment | The ATA driver or TurkFS as a user-space server with message passing, and its measured cost |
-| F. Virtualisation | What QEMU and KVM do, running with `-enable-kvm`, comparing benchmarks |
-| G. Loadable kernel modules | Relocatable ELF objects loaded into the running kernel, an exported symbol table, `insmod`, `rmmod` and `lsmod` |
-
----
-
-## Repository layout
-
-The folders fill up phase by phase. Empty folders hold a `.gitkeep` file so Git tracks them; delete it once the
-folder has real files.
-
-```text
-Turk-OS/
-├── README.md               this file
-├── LICENSE                 MIT License
-├── Makefile                kernel build: all, run, iso, debug, clean, test, release     (Phase 1+)
-├── link.ld                 kernel linker script, higher half from Phase 6               (Phase 1)
-├── boot/                   loader.s (Multiboot entry), grub.cfg                         (Phase 1)
-├── kernel/
-│   ├── kmain.c             kernel entry point in C                                      (Phase 2)
-│   ├── arch/i386/          gdt.c idt.c isr.s irq.c pic.c pit.c tss.c paging.c switch.s  (Phases 3, 4, 6, 8, 10)
-│   ├── arch/riscv32/       boot.S entry.S trap.c sbi.c plic.c timer.c sv32.c switch.S   (Phase 17)
-│   ├── arch/aarch64/       boot.S vectors.S trap.c gic.c timer.c mmu.c switch.S         (Phase 18)
-│   ├── mm/                 pmm.c vmm.c heap.c                                           (Phases 5–7)
-│   ├── proc/               task.c sched.c fork.c exec.c signal.c                        (Phases 8, 11)
-│   ├── sync/               spinlock.c mutex.c semaphore.c waitq.c                       (Phase 9)
-│   ├── fs/                 vfs.c file.c tarfs.c turkfs.c devfs.c pipe.c                 (Phases 13, 14)
-│   ├── drivers/            vga.c serial.c keyboard.c tty.c ata.c ramdisk.c
-│   │                       blockdev.c bcache.c                                          (Phases 2, 4, 12, 14)
-│   │                       uart16550.c pl011.c virtio_mmio.c virtio_blk.c               (Phases 16–18)
-│   └── syscall/            syscall.c uaccess.c                                          (Phase 10)
-├── lib/                    libk: string.c convert.c printf.c bitmap.c ringbuf.c list.h  (Phase 0+)
-│                           fdt.c, the devicetree parser                                 (Phase 16)
-├── include/                kernel headers, including locks.h with the lock order        (Phase 0+)
-│                           arch.h (the architecture interface) and bootinfo.h           (Phase 16)
-├── user/
-│   ├── user.ld             user program linker script (programs start at 0x00400000)    (Phase 10)
-│   ├── arch/<arch>/        crt0 and system call stubs per architecture                  (Phases 16–18)
-│   ├── libc/               Turk-libc                                                    (Phase 14)
-│   ├── init/               init, PID 1                                                  (Phase 11)
-│   ├── sh/                 tsh, the Turk shell                                          (Phase 14)
-│   └── bin/                core utilities, fuzz, bench                                  (Phases 14, 15)
-├── rootfs/                 files for the root archive (/etc/motd, /etc/passwd); bin/ is generated  (Phase 13)
-├── tests/                  host tests for lib/, in-kernel ktest suites                  (Phases 0, 5, 7)
-│                           data/: devicetree blobs dumped from QEMU                     (Phase 16)
-├── tools/                  mkturkfs.c and helper scripts
-└── docs/                   study plan (LaTeX + PDFs), setup guide, lab journal, porting.md  (see docs/README.md)
-```
-
-Generated files never enter Git. Everything the build produces goes to `build/`: `kernel.elf`, `boot.bin`,
-`turkos.iso` and its `iso/` staging tree, `disk.img`, `turkfs.img`, `initrd.tar`, user programs under `build/user/`,
-and `serial.log`. See [`.gitignore`](.gitignore) for the full list. From Phase 16 on, each architecture builds into
-its own folder (`build/i386/`, `build/riscv32/`, `build/aarch64/`), so the paths below gain one level.
-
----
-
-## Getting started
-
-> **Status:** the repository currently holds the study plan and the empty source tree. The top-level `Makefile`
-> arrives in Phase 1, so until then the only thing to build is the documentation (`make -C docs`).
-
-### Host requirements
-
-Turk-OS builds on **Arch Linux, Fedora, Ubuntu/Debian, macOS and Windows (through WSL2)**. Every platform uses the
-same tools; only package names and a few command names differ. The full,
-step-by-step guide (packages, the cross compiler, editor setup, verification and troubleshooting for each platform)
-is **[docs/setup.md](docs/setup.md)**.
-
-| Platform | Install the host tools | Cross compiler |
-|---|---|---|
-| **Arch Linux** | `sudo pacman -S --needed base-devel git nasm qemu-desktop gdb libisoburn mtools grub` | [Build from source](docs/setup.md#3-build-the-i686-elf-cross-compiler), or `i686-elf-gcc` from the AUR |
-| **Fedora** | `sudo dnf install gcc make git nasm qemu-system-x86 qemu-img gdb xorriso mtools grub2-tools grub2-tools-extra grub2-pc-modules util-linux` | Build from source |
-| **Ubuntu / Debian** | `sudo apt install build-essential git curl nasm qemu-system-x86 qemu-system-gui qemu-utils gdb xorriso mtools grub-pc-bin grub-common util-linux` | Build from source |
-| **macOS** | `brew install i686-elf-binutils i686-elf-gcc i686-elf-grub i386-elf-gdb nasm qemu xorriso mtools util-linux make coreutils` ([details](docs/setup.md#macos)) | Included in the `brew` line |
-| **Windows 10 / 11** | `wsl --install -d Ubuntu`, then the Ubuntu line inside WSL2 ([details](docs/setup.md#windows-wsl2)) | Build from source inside WSL2 |
-
-Building the cross compiler from source also needs Bison, Flex, Texinfo and the GMP, MPFR and MPC development
-packages; [setup.md](docs/setup.md#2-install-the-host-tools) has the exact line for each platform. The result is an
-`i686-elf` GCC and binutils in `~/opt/cross/bin`, on your `PATH`.
-
-| Tool | Used for | Check |
-|---|---|---|
-| `i686-elf-gcc`, `i686-elf-ld` | Compiling and linking the kernel and user programs | `i686-elf-gcc --version` |
-| `nasm` | Boot sector, loader, interrupt stubs, context switch | `nasm -v` |
-| `qemu-system-i386`, `qemu-img` | Running and testing the OS; disk images | `qemu-system-i386 --version` |
-| `gdb` (`i386-elf-gdb` on macOS) | Source-level kernel debugging over QEMU's GDB stub | `gdb --version` |
-| `grub-mkrescue` (Arch, Ubuntu/Debian), `grub2-mkrescue` (Fedora) or `i686-elf-grub-mkrescue` (macOS), with `xorriso` and `mtools` | Building the bootable ISO | `grub-mkrescue --version` |
-| `mkfs.minix`, `fsck.minix` (util-linux) | Creating and checking TurkFS images | `fsck.minix --version` |
-| `latexmk` + TeX Live | Rebuilding the study plan PDFs (optional) | `latexmk -v` |
-
-Command names that differ between platforms are listed in
-[setup.md, section 4](docs/setup.md#4-tool-names-on-each-platform), together with a Makefile snippet that finds the
-right one automatically.
-
-The ports of Stage V need more tools, but only from Phase 16 on: `riscv32-elf` and `aarch64-elf` cross compilers
-(built like the `i686-elf` one), `qemu-system-riscv32` with its OpenSBI firmware, `qemu-system-aarch64`, `dtc` and a
-GDB that knows all three architectures.
-[setup.md, section 9](docs/setup.md#9-toolchains-for-the-ports-stage-v) has the packages and build steps for every
-platform.
-
-### Build and run
-
-```sh
-git clone https://github.com/hikmethankolay/Turk-OS.git
-cd Turk-OS
-make run
-```
-
-The `Makefile` grows target by target as the phases need them:
-
-| Command | What it does | From |
+| Layer | Mechanism | From phase |
 |---|---|:---:|
-| `make` / `make all` | Builds `build/kernel.elf` from `boot/`, `kernel/` and `lib/` | Phase 1 |
-| `make run` | Boots the kernel with `qemu-system-i386 -kernel`; from Phase 2 the serial port goes to your terminal (`-serial stdio`) | Phase 1 |
-| `make iso` | Builds `build/turkos.iso` with `grub-mkrescue` (`grub2-mkrescue` on Fedora) | Phase 1 |
-| `make debug` | Starts QEMU frozen with its GDB stub (`-s -S`) and attaches GDB with a breakpoint at the entry point | Phase 1 |
-| `make clean` | Deletes `build/` | Phase 1 |
-| `make test` | Boots a headless QEMU with the kernel command line `test`, runs every test, and fails if any test fails | Phase 7 |
-| `make release` | Builds the kernel, user programs, root archive, a populated TurkFS image and a GRUB ISO | Phase 15 |
-| `make ARCH=riscv32 run` (or `aarch64`) | Every target above for another architecture; `ARCH=i386` is the default | Phase 16 (target), Phases 17–18 (boots) |
-| `make check-generic` | Compiles every generic kernel file for `riscv32` and `aarch64`, to catch x86 and 32-bit assumptions | Phase 16 |
-| `make release-all` | Releases all three architectures: the i386 ISO, the riscv32 and aarch64 kernels and one TurkFS image | Phase 18 |
-| `make -C docs` | Rebuilds the study plan PDFs (see [docs/README.md](docs/README.md)) | now |
+| Supply chain | GNU toolchain sources verified with `gpg`; tool versions pinned in `docs/toolchain.lock` | 0 |
+| Compiler | `-Werror -Wformat=2`, format-checked logging, overflow-checked size arithmetic, stack protector | 0, 2, 10 |
+| Kernel memory | Read-only text and rodata, guard pages under kernel stacks, unmapped page 0, saturating reference counts | 6, 8, 9 |
+| User/kernel boundary | One `uaccess.c` for all user memory, copy-once validation, zeroed structures before copy-out, a per-call validation table | 10, 11 |
+| Untrusted input | Validating ELF loader; bounds-checked partition tables, superblocks, inodes and tar headers | 10, 12, 13 |
+| Isolation | Per-process address spaces, per-task FPU state, resource limits, users, groups, file and device permissions, sessions | 8–15 |
+| Verification | Negative tests ("evil programs"), a seeded system call fuzzer, host fuzzing of every parser, a trap-on-UB kernel build, CI on every push | 7–15 |
+| Release | Reproducible builds compared by hash, `SHA256SUMS`, signed tags | 15 |
+| Ports | The same tests on RISC-V and AArch64, plus W^X; `SUM`/PAN limit user access to copy routines | 16–18 |
 
-### Running QEMU by hand
+---
+
+## Building
+
+Turk-OS builds on **Linux, macOS and Windows (WSL2)** with a GCC cross compiler for `i686-elf`, NASM, QEMU, GDB and
+GRUB. The complete guide, including editor setup, troubleshooting and the toolchains for the ports, is
+**[docs/setup.md](docs/setup.md)**.
+
+> [!NOTE]
+> The top-level `Makefile` lands with the boot code in Phase 1. Until then, the steps below set up the toolchain and
+> `make -C docs` builds the design documents.
+
+### 1. Install the host tools
+
+<details>
+<summary><b>Arch Linux</b></summary>
 
 ```sh
-# Quick boot through QEMU's built-in Multiboot loader, serial log in the terminal
-qemu-system-i386 -kernel build/kernel.elf -serial stdio
+sudo pacman -S --needed base-devel git nasm qemu-desktop gdb libisoburn mtools grub
+```
 
-# Boot exactly like a real PC: BIOS -> GRUB -> kernel
-qemu-system-i386 -cdrom build/turkos.iso -serial stdio
+`base-devel` includes what the cross compiler needs. Alternatively, install the cross toolchain from the AUR
+(`i686-elf-binutils`, `i686-elf-gcc`) and skip step 2.
 
-# Choose the amount of RAM (the memory map must match)
-qemu-system-i386 -kernel build/kernel.elf -serial stdio -m 128
+</details>
 
-# Keep the serial log in a file instead
-qemu-system-i386 -kernel build/kernel.elf -serial file:build/serial.log
+<details>
+<summary><b>Fedora</b></summary>
 
-# Pass user programs as Multiboot modules (Phase 10)
-qemu-system-i386 -kernel build/kernel.elf -serial stdio \
-    -initrd "build/user/hello.elf,build/user/evil.elf"
+```sh
+sudo dnf install gcc make git nasm qemu-system-x86 qemu-img gdb xorriso mtools \
+                 grub2-tools grub2-tools-extra grub2-pc-modules util-linux \
+                 bison flex gmp-devel mpfr-devel libmpc-devel texinfo
+```
 
-# Attach a scratch disk as primary master (Phase 12) and TurkFS as primary slave (Phase 13)
+Fedora names the GRUB tools `grub2-mkrescue` and `grub2-file`.
+
+</details>
+
+<details>
+<summary><b>Ubuntu / Debian</b></summary>
+
+```sh
+sudo apt update
+sudo apt install build-essential git curl nasm qemu-system-x86 qemu-system-gui qemu-utils gdb \
+                 xorriso mtools grub-pc-bin grub-common util-linux \
+                 bison flex libgmp-dev libmpfr-dev libmpc-dev texinfo
+```
+
+`grub-pc-bin` provides the BIOS modules; without it the ISO boots only on UEFI.
+
+</details>
+
+<details>
+<summary><b>macOS (Homebrew)</b></summary>
+
+Homebrew ships a prebuilt cross compiler, so skip step 2:
+
+```sh
+brew install i686-elf-binutils i686-elf-gcc i686-elf-grub i386-elf-gdb \
+             nasm qemu xorriso mtools util-linux make coreutils gnupg
+echo 'export PATH="$(brew --prefix util-linux)/sbin:$PATH"' >> ~/.zshrc
+```
+
+Use `gmake`, `i386-elf-gdb`, `i686-elf-grub-mkrescue` and `gtimeout`; see the
+[macOS notes](docs/setup.md#macos).
+
+</details>
+
+<details>
+<summary><b>Windows 10 / 11 (WSL2)</b></summary>
+
+Build inside WSL2 with Ubuntu. From an elevated PowerShell:
+
+```powershell
+wsl --install -d Ubuntu
+wsl --update
+```
+
+Then follow the Ubuntu steps inside WSL and keep the repository in the Linux file system (`~/Turk-OS`), not under
+`/mnt/c`. See the [WSL2 notes](docs/setup.md#windows-wsl2).
+
+</details>
+
+### 2. Build the cross compiler
+
+Linux and WSL2 only. Installs into `~/opt/cross` without `sudo`; takes 20–40 minutes once.
+
+```sh
+export BINUTILS_VERSION=2.47 GCC_VERSION=16.2.0
+export PREFIX="$HOME/opt/cross" TARGET=i686-elf PATH="$HOME/opt/cross/bin:$PATH"
+
+mkdir -p ~/src && cd ~/src
+curl -LO https://ftp.gnu.org/gnu/gnu-keyring.gpg && gpg --import gnu-keyring.gpg
+for f in binutils/binutils-$BINUTILS_VERSION gcc/gcc-$GCC_VERSION/gcc-$GCC_VERSION; do
+    curl -LO https://ftp.gnu.org/gnu/$f.tar.xz && curl -LO https://ftp.gnu.org/gnu/$f.tar.xz.sig
+done
+gpg --verify binutils-$BINUTILS_VERSION.tar.xz.sig binutils-$BINUTILS_VERSION.tar.xz
+gpg --verify gcc-$GCC_VERSION.tar.xz.sig gcc-$GCC_VERSION.tar.xz
+tar xf binutils-$BINUTILS_VERSION.tar.xz && tar xf gcc-$GCC_VERSION.tar.xz
+
+mkdir -p build-binutils && cd build-binutils
+../binutils-$BINUTILS_VERSION/configure --target=$TARGET --prefix="$PREFIX" --with-sysroot --disable-nls --disable-werror
+make -j"$(nproc)" && make install
+
+mkdir -p ../build-gcc && cd ../build-gcc
+../gcc-$GCC_VERSION/configure --target=$TARGET --prefix="$PREFIX" --disable-nls --enable-languages=c --without-headers
+make -j"$(nproc)" all-gcc all-target-libgcc && make install-gcc install-target-libgcc
+
+echo 'export PATH="$HOME/opt/cross/bin:$PATH"' >> ~/.bashrc
+```
+
+> [!IMPORTANT]
+> Both `gpg --verify` commands must report `Good signature` before you unpack anything. Check
+> [ftp.gnu.org/gnu](https://ftp.gnu.org/gnu/) for newer versions, and see
+> [section 3](docs/setup.md#3-build-the-i686-elf-cross-compiler) of the setup guide if the build fails.
+
+### 3. Verify and build
+
+```sh
+i686-elf-gcc --version          # i686-elf-gcc (GCC) 16.2.0
+nasm -v && qemu-system-i386 --version && gdb --version
+git clone https://github.com/hikmethankolay/Turk-OS.git && cd Turk-OS
+make run                        # from Phase 1
+```
+
+<details>
+<summary><b>Make targets</b></summary>
+
+| Command | What it does | Available from |
+|---|---|:---:|
+| `make` | Builds `build/kernel.elf` | Phase 1 |
+| `make run` | Boots the kernel in QEMU with the serial console on your terminal | Phase 1 |
+| `make iso` | Builds a bootable `build/turkos.iso` with GRUB | Phase 1 |
+| `make debug` | Starts QEMU halted with its GDB stub and attaches GDB | Phase 1 |
+| `make clean` | Removes `build/` | Phase 1 |
+| `make test` | Boots a headless QEMU, runs every in-kernel test and fails on any failure | Phase 7 |
+| `make test UBSAN=1` | The same, with a kernel that traps on undefined behaviour | Phase 7 |
+| `make release` | Kernel, userland, root archive, TurkFS image and ISO | Phase 15 |
+| `make ARCH=riscv32 …` / `ARCH=aarch64` | Any target above for another architecture (`i386` is the default) | Phase 16 |
+| `make check-generic` | Compiles the generic kernel for every architecture to catch non-portable code | Phase 16 |
+| `make -C docs` | Builds the design documents (PDF) | now |
+
+Tool names that differ between platforms are listed in [setup.md, section 4](docs/setup.md#4-tool-names-on-each-platform);
+the toolchains for the ports are in [section 9](docs/setup.md#9-toolchains-for-the-ports-stage-v).
+
+</details>
+
+---
+
+## Running and debugging
+
+```sh
+qemu-system-i386 -kernel build/kernel.elf -serial stdio          # quick boot via QEMU's Multiboot loader
+qemu-system-i386 -cdrom build/turkos.iso -serial stdio           # full BIOS → GRUB → kernel boot
+```
+
+<details>
+<summary><b>More QEMU configurations</b></summary>
+
+```sh
+# Serial log to a file, 128 MiB of RAM
+qemu-system-i386 -kernel build/kernel.elf -serial file:build/serial.log -m 128
+
+# User programs as Multiboot modules
+qemu-system-i386 -kernel build/kernel.elf -serial stdio -initrd "build/user/hello.elf,build/user/evil.elf"
+
+# Scratch disk on the primary master, TurkFS on the primary slave
 qemu-img create -f raw build/disk.img 64M
 dd if=/dev/zero of=build/turkfs.img bs=1024 count=32768 && mkfs.minix -3 build/turkfs.img
 qemu-system-i386 -kernel build/kernel.elf -serial stdio \
     -drive file=build/disk.img,format=raw,if=ide,index=0,media=disk \
     -drive file=build/turkfs.img,format=raw,if=ide,index=1,media=disk
 
-# Stage V: the RISC-V port (Phase 17) and the ARM port (Phase 18), TurkFS on a virtio disk
+# RISC-V and AArch64 (v2.0), TurkFS on virtio-blk
 qemu-system-riscv32 -machine virt -bios default -m 128M -nographic \
     -kernel build/riscv32/kernel.elf -global virtio-mmio.force-legacy=false \
     -drive if=none,format=raw,file=build/riscv32/turkfs.img,id=hd0 \
@@ -508,196 +443,200 @@ qemu-system-aarch64 -machine virt,gic-version=2 -cpu cortex-a72 -m 128M -nograph
     -drive if=none,format=raw,file=build/aarch64/turkfs.img,id=hd0 -device virtio-blk-device,drive=hd0
 ```
 
-With `-nographic` the terminal is the board's serial port: press Ctrl+A, then X to quit QEMU.
+With `-nographic`, press Ctrl+A then X to quit.
 
-### Debugging
+</details>
 
-Kernel bugs often end in a silent reboot (a triple fault). These tools turn that into something you can read:
-
-| Tool | How | What it shows |
+| Tool | Invocation | What it gives you |
 |---|---|---|
-| Serial log | `-serial stdio`, and a `kprintf` at every boot step | How far the kernel got before it died |
-| Interrupt log | `-d int,cpu_reset -no-reboot` | Every interrupt and exception with its vector and registers; QEMU stops instead of rebooting |
-| QEMU monitor | `-monitor stdio`, or `Ctrl+Alt+2` in the QEMU window | `info registers` (GDT, IDT, CR0, CR3), `info mem` (page mappings), `info block` (disks) |
-| GDB | `make debug` | Breakpoints, `stepi`, `info registers`, `x/4xw $esp`, `p/x $eax`, `layout asm` |
-| Crash report | Phase 3 exception handler | Exception name, error code and a full register dump instead of a reboot |
-| Page-fault report | Phase 6 fault handler | The faulting address from CR2 and a decoded error code: read or write, user or kernel, not present or protection |
-| Backtrace | Phase 15 symbol table module | Function names in every panic |
-| Host checks | `grub-file --is-x86-multiboot build/kernel.elf` (`grub2-file` on Fedora), `i686-elf-objdump -d -M intel`, `i686-elf-readelf -S`, `hexdump -C` | Whether the image is what you think it is |
+| Serial log | `-serial stdio` | How far the kernel got, with every boot step logged |
+| Interrupt trace | `-d int,cpu_reset -no-reboot` | Every exception with vector and registers; no silent reboot on triple fault |
+| QEMU monitor | `-monitor stdio` | `info registers`, `info mem`, `info block` |
+| GDB | `make debug` | Source-level debugging over QEMU's GDB stub |
+| Crash and fault reports | built in | Register dump per exception; page faults decoded (address, access, mode, cause) |
+| UB trap build | `make test UBSAN=1` + `addr2line` | The exact line that triggered undefined behaviour |
+| Backtraces | built in (Phase 15) | Symbolised call chain in every panic |
 
-**When stuck:** reproduce the bug reliably and shrink it; look instead of guessing (serial log, `-d int`, monitor,
-GDB); write the hypothesis in the [lab journal](docs/journal.md) before changing code, one change at a time;
-re-read the exact rule in the Intel manual or the book; compare with how MINIX or xv6 does the same step; after two
-sessions without progress, ask for help and bring the journal notes. Small commits let `git bisect` find the change
-that broke the kernel.
+## Testing
 
-### Testing
-
-| Level | What | From |
+| Level | What runs | From phase |
 |---|---|:---:|
-| Host unit tests | `lib/` compiled with the host GCC and run with AddressSanitizer and UBSan: `gcc -std=gnu11 -Wall -Wextra -g -fsanitize=address,undefined -Iinclude tests/test_lib.c lib/*.c -o build/test_lib && ./build/test_lib` | Phase 0 |
-| Kernel tests | A small `ktest` framework; the monitor's `test` command runs every registered test | Phase 5 |
-| Automated runs | `make test`: headless QEMU, results on serial, exit code through `isa-debug-exit` (QEMU exits with 2v+1, so 1 means pass), with a 120-second timeout | Phase 7 |
-| Stress tests | 10 000-step heap test, 1000 task and fork cycles without leaks, bounded buffer and dining philosophers | Phases 7–11 |
-| Evil programs | Seven user programs that misbehave on purpose; each must be killed while the kernel survives | Phase 10 |
-| File system checks | `fsck.minix -f build/turkfs.img` on the host after Turk-OS has written to it | Phase 13 |
-| Shell tests | `tsh -c` command lines compared with expected output, part of `make test` | Phase 14 |
-| Fuzzing | Four system call fuzzers plus a stress script for one hour, with no panic and no leak | Phase 15 |
-| Portability checks | `make check-generic` (generic code compiled for RISC-V and ARM) and host tests of the devicetree parser on blobs dumped from QEMU | Phase 16 |
-| Tests on the ports | `make ARCH=riscv32 test` exits through QEMU's `sifive_test` device, `make ARCH=aarch64 test` through Arm semihosting; the same suites, evil programs, shell tests and fuzzer run on all three | Phases 17, 18 |
+| Host unit tests | Support library and parsers built for the host under AddressSanitizer and UBSan | 0 |
+| In-kernel tests | `ktest` suites booted headless by `make test`; result reported through `isa-debug-exit` | 5, 7 |
+| Continuous integration | Every push: `-Werror` build, host tests, `make test`. Nightly: UB-trap build and fuzzers | 7 |
+| Failure injection | Forced allocation failures; every caller must return an error | 7 |
+| Stress | Heap churn, 1000 task and fork cycles without leaks, classic concurrency problems with lock checking | 7–11 |
+| Negative tests | "Evil programs" that misbehave on purpose: bad and kernel pointers, malformed ELF files, stack smashing, writes to read-only pages | 10, 11 |
+| Fuzzing | Seeded, replayable system call fuzzer; libFuzzer targets for the ELF, TurkFS and tar parsers | 10–15 |
+| File-system checks | `fsck.minix` on images written by Turk-OS, including after an unclean shutdown | 13 |
+| Shell tests | `tsh -c` command lines compared with expected output | 14 |
+| Cross-architecture | `make check-generic`, devicetree parser tests, and the full suite on RISC-V and AArch64 | 16–18 |
 
 ---
 
-## The study plan
+## Roadmap
 
-The plan in [`docs/`](docs/) is the backbone of the project: a roadmap and one document per phase, written in LaTeX
-and committed as PDFs. See **[docs/README.md](docs/README.md)** for the full index and how the documents are built.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/roadmap-dark.svg">
+  <img src="docs/assets/roadmap.svg" alt="Release roadmap in five stages: boot and interrupts (Phases 0 to 4, in progress), memory management (5 to 7), processes (8 to 11), storage and userland (12 to 15) ending in v1.0 on i386, and portability (16 to 18) ending in v2.0 on i386, RV32 and AArch64." width="100%">
+</picture>
 
-Every phase document has the same layout: an *at a glance* box (duration, difficulty, prerequisites, result),
-*why this phase*, *concepts you need*, a *reading plan* with printed page numbers marked **REQUIRED**,
-**RECOMMENDED** or **OPTIONAL**, a *real-system lens* box (MINIX 3, plus how Linux does it), numbered *build it* tasks each with a **Verify** step, a
-debugging table, the *milestone* checklist, *self-check questions* and *going further*.
+Development proceeds in 19 phases. Each has a design document in [`docs/pdf/`](docs/pdf/) that specifies the
+subsystem, its implementation tasks with acceptance checks, and the exit criteria that close the phase.
 
-The study loop, repeated in every phase:
+| # | Phase | Deliverables | Design doc | Status |
+|---:|---|---|:---:|:---:|
+| 0 | Foundations and toolchain | Verified cross toolchain, source skeleton, tested support library, threat-model stub | [PDF](docs/pdf/phase-00-foundations.pdf) | 🔄 |
+| 1 | Assembly and boot | Boot sector; Multiboot kernel booted by GRUB and QEMU | [PDF](docs/pdf/phase-01-assembly-and-boot.pdf) | ⬜ |
+| 2 | Consoles and logging | VGA and serial drivers, `kprintf`, `panic`; warning-free `-Werror` build | [PDF](docs/pdf/phase-02-output-drivers.pdf) | ⬜ |
+| 3 | Descriptors and exceptions | GDT, IDT, exception handlers with register dumps | [PDF](docs/pdf/phase-03-gdt-idt-exceptions.pdf) | ⬜ |
+| 4 | Hardware interrupts | PIC, PIT, keyboard, kernel monitor | [PDF](docs/pdf/phase-04-hardware-interrupts.pdf) | ⬜ |
+| 5 | Physical memory | Validated memory map, bitmap and buddy allocators, kernel test framework | [PDF](docs/pdf/phase-05-physical-memory.pdf) | ⬜ |
+| 6 | Paging | Higher-half kernel, VMM API, fault reports, read-only kernel text | [PDF](docs/pdf/phase-06-paging-higher-half.pdf) | ⬜ |
+| 7 | Kernel heap | Slab caches and heap, `make test`, CI, trap-on-UB build | [PDF](docs/pdf/phase-07-kernel-heap.pdf) | ⬜ |
+| 8 | Scheduling | Kernel threads, context switch, preemptive scheduler, per-task FPU state | [PDF](docs/pdf/phase-08-processes-scheduling.pdf) | ⬜ |
+| 9 | Synchronisation | Spinlocks, wait queues, mutexes, semaphores, lock-order checking | [PDF](docs/pdf/phase-09-synchronization.pdf) | ⬜ |
+| 10 | User mode | Ring 3, system calls, checked user access, ELF loader, threat model | [PDF](docs/pdf/phase-10-user-mode-syscalls.pdf) | ⬜ |
+| 11 | Process API | `fork`/COW, `exec`, `wait`, `brk`, signals, system call fuzzer | [PDF](docs/pdf/phase-11-process-api.pdf) | ⬜ |
+| 12 | Storage | ATA driver, block layer, partitions, buffer cache | [PDF](docs/pdf/phase-12-storage-drivers.pdf) | ⬜ |
+| 13 | File systems | VFS, descriptors, tar root, writable TurkFS, parser fuzzing | [PDF](docs/pdf/phase-13-file-systems.pdf) | ⬜ |
+| 14 | Userland | Turk-libc, pipes, terminal, `tsh`, core utilities, resource limits | [PDF](docs/pdf/phase-14-userland-shell.pdf) | ⬜ |
+| 15 | Hardening and `v1.0` | Final audit, permissions and sessions, benchmarks, reproducible signed release | [PDF](docs/pdf/phase-15-hardening-release.pdf) | ⬜ |
+| 16 | Portability layer | `include/arch.h`, boot information, devicetree parser, 64-bit-clean generic code | [PDF](docs/pdf/phase-16-portability-layer.pdf) | ⬜ |
+| 17 | RISC-V port | RV32 on QEMU `virt`: OpenSBI, Sv32, PLIC, virtio-blk | [PDF](docs/pdf/phase-17-riscv-port.pdf) | ⬜ |
+| 18 | AArch64 port and `v2.0` | EL1, GICv2, generic timer, MMU, LP64 userland | [PDF](docs/pdf/phase-18-arm-port.pdf) | ⬜ |
 
-1. **Read the theory first**, usually OSTEP, then the REQUIRED items from the other books.
-2. **Read the practical chapter** in *The little book about OS development*, when there is one.
-3. **Look at a real system**: the lens box points to the matching MINIX section and source file, then to Linux.
-4. **Build in small steps**: one task at a time, boot after each change, commit when it works.
-5. **Verify**: a task isn't finished until its Verify step passes.
-6. **Write it down** in the [lab journal](docs/journal.md): what you tried, what broke and why.
-7. **Answer the self-check questions** without looking. If you can't, go back to the reading.
+<details>
+<summary><b>Exit criteria per phase</b></summary>
 
-Never start a phase while the previous milestone is still shaky; every later phase builds on it.
+- **P0** — `i686-elf-gcc`, NASM, QEMU and GDB work; toolchain signatures verified; support library and overflow helpers pass their tests; threat-model stub written.
+- **P1** — Boot sector prints a message; Multiboot kernel boots via `-kernel` and via a GRUB ISO.
+- **P2** — Banner on screen, same log on the serial port, `kprintf` and `panic` tested; the kernel builds with `-Werror`.
+- **P3** — GDT and IDT loaded; divide-by-zero shows a register dump; `int3` returns cleanly.
+- **P4** — Timer ticks at 100 Hz; keyboard input with shift and caps; monitor commands run.
+- **P5** — Memory map printed; bitmap and buddy allocators pass the tests from 16 MiB to 3 GiB of RAM.
+- **P6** — Kernel runs at `0xC0000000`; null dereference produces a clean page-fault report; a write to kernel code faults.
+- **P7** — Stress test passes through the slab caches; `make test` runs headless and in CI; the UB-trap build passes; allocation failures are handled.
+- **P8** — Kernel threads preempt each other; `sleep` works; no leaks over 1000 task cycles; FPU state stays with its task.
+- **P9** — Race demo fixed by locks; bounded buffer and dining philosophers run without deadlock; lock order checked.
+- **P10** — Ring-3 program prints through `write`; malicious programs are killed or get errors while the kernel survives; malformed ELF files are rejected; every system call has a validation contract.
+- **P11** — `fork`/`exec`/`wait` works; copy-on-write verified, also through `copy_to_user`; no leaks over 1000 forks; ten minutes of fuzzing without a panic.
+- **P12** — Disk identified; data survives reboot; partitions detected and corrupted tables rejected; buffer cache in use.
+- **P13** — Images written by Turk-OS pass `fsck.minix`; descriptor semantics tested; corrupted images rejected; parsers survive an hour of fuzzing.
+- **P14** — Boots to the `tsh` prompt; pipes, redirection and Ctrl+C work; utilities present; resource limits enforced.
+- **P15** — One hour of fuzzing as an unprivileged user without a panic; permission and session tests pass; two clean builds match; `v1.0` tagged and signed.
+- **P16** — Generic code free of x86; `make ARCH=i386 test` passes; generic code compiles for riscv32 and aarch64 without warnings; devicetree parser passes its tests.
+- **P17** — RISC-V `virt` boots to `tsh`; `make ARCH=riscv32 test` passes, negative tests included; W^X holds; TurkFS images interoperate.
+- **P18** — AArch64 `virt` boots to `tsh`; `make ARCH=aarch64 test` passes, negative tests included; W^X holds; one TurkFS image works on all three; `v2.0` tagged.
 
----
+</details>
 
-## Books and references
-
-The books are **not** part of this repository, so get your own copies before Phase 0. Two are free online from their
-authors. The other five are copyrighted books: buy them from the publisher or a bookshop (a used copy is fine),
-or borrow them from a library.
-
-| Code | Book | Where to get it | Role in the plan |
-|---|---|---|---|
-| **LOB** | Erik Helin, Adam Renberg. *The little book about OS development*, 2015. | Free at [littleosbook.github.io](https://littleosbook.github.io/), as a web page or a PDF. The page numbers in the plan refer to the PDF. | The practical spine: its 14 chapters give the build order for Phases 1–14. Uses GRUB Legacy and Bochs; the phase docs give the QEMU and GRUB 2 equivalents. |
-| **OSTEP** | Remzi H. and Andrea C. Arpaci-Dusseau. *Operating Systems: Three Easy Pieces*, v0.90, Arpaci-Dusseau Books, 2015. | Free at [pages.cs.wisc.edu/~remzi/OSTEP](https://pages.cs.wisc.edu/~remzi/OSTEP/), one PDF per chapter (current version 1.10). Printed copies are sold there too. | Main theory text, the first read in every phase. |
-| **OSC** | A. Silberschatz, P. B. Galvin, G. Gagne. *Operating System Concepts*, 10th ed., Wiley, 2018. ISBN 978-1-119-32091-3. | Wiley, a bookshop or a library. | Encyclopedic reference; a second explanation when an OSTEP chapter didn't click. |
-| **MOS** | Andrew S. Tanenbaum, Herbert Bos. *Modern Operating Systems*, 4th ed., Pearson, 2015. ISBN 978-0-13-359162-0. | Pearson, a bookshop or a library. | Strongest on hardware, I/O, clocks, disks, security and OS design (Ch. 12). |
-| **OSDI** | Andrew S. Tanenbaum, Albert S. Woodhull. *Operating Systems: Design and Implementation*, 3rd ed., Pearson Prentice Hall, 2006. ISBN 978-0-13-142938-3. | A bookshop (often second-hand) or a library. | MINIX 3 printed line by line: how a real x86 kernel does each step. |
-| **LKD** | Robert Love. *Linux Kernel Development*, 3rd ed., Addison-Wesley, 2010. ISBN 978-0-672-32946-3. | A bookshop or a library. | How Linux implements each subsystem: the second real-system lens, next to MINIX. |
-| **LKP** | Kaiwan N. Billimoria. *Linux Kernel Programming*, Packt, 2021. ISBN 978-1-78995-343-5. | Packt, a bookshop or a library. | The newest book: modern practice for logging, the buddy and slab allocators, the CFS scheduler and synchronisation. |
-
-Page numbers in the plan are the *printed* page numbers of these editions, not PDF page indices. With any other
-edition, find each reading by the chapter and section numbers that every reading-plan row gives. For OSTEP this is
-the normal case: each free chapter PDF starts at page 1, and version 1.10 is paginated differently from v0.90.
-Chapters 1–43, and every section the plan cites, have the same numbers in both versions; only chapter 23 was renamed
-(*Complete Virtual Memory Systems*, formerly *The VAX/VMS Virtual Memory System*). MINIX references such as
-`kernel/proc.c (07400)` give the file and its starting line in OSDI Appendix B.
-
-Hardware facts come from outside the books:
-
-- **Intel 64 and IA-32 Architectures Software Developer's Manual, Volume 3A** (System Programming Guide), chapters
-  2–7: protection, segmentation, paging, interrupts and the TSS.
-  [intel.com/sdm](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)
-- **OSDev Wiki**: practical pages on nearly every device in this plan, plus lists of common mistakes.
-  [wiki.osdev.org](https://wiki.osdev.org)
-- **Multiboot Specification 0.6.96**: the contract between GRUB and the kernel.
-  [gnu.org](https://www.gnu.org/software/grub/manual/multiboot/multiboot.html)
-- **NASM manual**: assembler syntax. [nasm.us](https://www.nasm.us/doc/)
-- **xv6** (optional): MIT's small UNIX-like teaching kernel, which OSTEP refers to.
-  [github.com/mit-pdos/xv6-public](https://github.com/mit-pdos/xv6-public)
-
-Stage V (Phases 16–18) adds free references for the ports. Their documents cite them with their own chips, listed
-in a second legend:
-
-- **XV6**: Cox, Kaashoek and Morris, *xv6: a simple, Unix-like teaching operating system*, RISC-V edition, with the
-  xv6-riscv source. [pdos.csail.mit.edu/6.1810](https://pdos.csail.mit.edu/6.1810/),
-  [github.com/mit-pdos/xv6-riscv](https://github.com/mit-pdos/xv6-riscv)
-- **RISCV**: *The RISC-V Instruction Set Manual*, Volumes I (Unprivileged) and II (Privileged), and the *RISC-V
-  Supervisor Binary Interface Specification*. [riscv.org/specifications/ratified](https://riscv.org/specifications/ratified/),
-  [github.com/riscv-non-isa/riscv-sbi-doc](https://github.com/riscv-non-isa/riscv-sbi-doc)
-- **ARM**: the *Arm Architecture Reference Manual for A-profile architecture* (DDI 0487) and Arm's *Learn the
-  architecture* guides (exception model, memory management, generic timer, GIC).
-  [developer.arm.com/documentation](https://developer.arm.com/documentation)
-- **SPEC**: the *Devicetree Specification*, the OASIS *Virtio* specification, and QEMU's documentation of the RISC-V
-  and Arm `virt` boards. [devicetree.org/specifications](https://www.devicetree.org/specifications/),
-  [docs.oasis-open.org/virtio](https://docs.oasis-open.org/virtio/virtio/),
-  [qemu.org/docs/master/system](https://www.qemu.org/docs/master/system/)
-
-Specifications are revised often, so the reading plans cite them by chapter and section title, not by page.
+After `v1.0`, optional extensions are specified in Phase 15: a framebuffer console with full Turkish text, SMP,
+networking (e1000/RTL8139, IPv4, UDP, minimal TCP), a 64-bit x86 port, a user-space driver experiment,
+KVM acceleration and loadable kernel modules.
 
 ---
 
-## Conventions
+## Documentation
 
-**C**
-- `-std=gnu11 -ffreestanding`, compiled with `i686-elf-gcc`, never the host compiler (except for host tests in
-  `tests/`). Kernel flags: `-O2 -g -Wall -Wextra -fno-omit-frame-pointer -Iinclude`; link with `-nostdlib -lgcc`.
-- Only the freestanding headers are available: `stdint.h`, `stddef.h`, `stdbool.h`, `stdarg.h`, `limits.h`.
-  Everything else, `memcpy` included, lives in `lib/`.
-- Hardware-defined structures are `__attribute__((packed))` and their sizes are checked with `_Static_assert`.
-- Memory-mapped device registers are accessed through `volatile` pointers.
+| Document | Contents |
+|---|---|
+| [Roadmap](docs/pdf/00-roadmap.pdf) | Architecture decisions, phase map, risks and the security approach across all phases |
+| [Phase design documents](docs/pdf/) | One per phase: concepts, reference reading, implementation tasks with acceptance checks, failure modes, exit criteria |
+| [Setup guide](docs/setup.md) | Toolchain installation and verification on every supported host, editor setup, troubleshooting |
+| [Documentation index](docs/README.md) | How the LaTeX sources are organised and built (`make -C docs`) |
+| [Engineering journal](docs/journal.md) | Decisions, hypotheses and debugging notes as the implementation proceeds |
 
-**Assembly**
-- NASM, Intel syntax, `.s` files assembled with `nasm -f elf32`. Read compiler output with `objdump -d -M intel` so it
-  matches.
-- Assembly only where C can't work: the entry point, descriptor table loads, interrupt stubs, the context switch and
-  the jump to user mode. Functions called from C follow cdecl and preserve `EBX`, `ESI`, `EDI`, `EBP` and `ESP`.
-- The ports (Stage V) use GNU as through the cross compiler: `.S` files under `kernel/arch/riscv32/` and
-  `kernel/arch/aarch64/`, run through the C preprocessor, with `//` comments. They follow each architecture's
-  calling convention (callee-saved `s0`–`s11` on RISC-V, `x19`–`x29` on AArch64).
+<details>
+<summary><b>References</b></summary>
 
-**Kernel design rules**
-- Every user pointer goes through `copy_from_user`, `copy_to_user` or `strncpy_from_user`. Copy first, then check the
-  copy.
-- Every shared structure has a documented lock, and locks are taken in the order written in `include/locks.h`; debug
-  builds check that order at run time.
-- Functions that can fail return 0 or a negative error code (`-ENOMEM`, `-EINVAL`); functions that return pointers
-  encode errors with `ERR_PTR`, checked with `IS_ERR` and `PTR_ERR`.
-- Shared objects (frames, open files) are counted with `refcount_t`, which saturates instead of wrapping to zero.
-- Interrupt handlers stay short: they acknowledge the device and defer the rest to a bottom half.
-- Every resource has a limit: processes (64), descriptors (32 per process), pipe buffers, path lengths.
-- Every boot step logs through `pr_info` and friends, so it reaches the serial port and the `dmesg` buffer.
+The design follows the standard operating-systems literature and compares every subsystem with MINIX 3 and Linux:
 
-**Git**
-- Commit small and often, and only when the kernel boots. Small commits make `git bisect` useful.
-- Line endings are LF everywhere (enforced by [`.gitattributes`](.gitattributes)); Makefile recipe lines start with a
-  real Tab.
-- Build output stays in `build/` and out of Git. The study plan PDFs in `docs/pdf/` are committed on purpose.
-- Tick each finished milestone in the tracker below. Version 1.0 is tagged `v1.0` at the end of Phase 15.
+- Arpaci-Dusseau, *Operating Systems: Three Easy Pieces* · Silberschatz et al., *Operating System Concepts*, 10th ed. ·
+  Tanenbaum and Bos, *Modern Operating Systems*, 4th ed. · Tanenbaum and Woodhull, *Operating Systems: Design and
+  Implementation*, 3rd ed. (MINIX 3) · Love, *Linux Kernel Development*, 3rd ed. · Billimoria, *Linux Kernel
+  Programming* · Helin and Renberg, *The little book about OS development*
+- [Intel 64 and IA-32 Architectures SDM, Vol. 3A](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html) ·
+  [Multiboot 0.6.96](https://www.gnu.org/software/grub/manual/multiboot/multiboot.html) ·
+  [OSDev Wiki](https://wiki.osdev.org) · [xv6](https://github.com/mit-pdos/xv6-public)
+- [RISC-V ISA and SBI specifications](https://riscv.org/specifications/ratified/) ·
+  [Arm Architecture Reference Manual](https://developer.arm.com/documentation) ·
+  [Devicetree](https://www.devicetree.org/specifications/) · [Virtio](https://docs.oasis-open.org/virtio/virtio/) ·
+  [xv6-riscv](https://github.com/mit-pdos/xv6-riscv)
+- [NIST SP 800-218 (SSDF)](https://csrc.nist.gov/pubs/sp/800/218/final) ·
+  [Linux Kernel Self-Protection](https://docs.kernel.org/security/self-protection.html) ·
+  [SEI CERT C](https://wiki.sei.cmu.edu/confluence/display/c)
+
+</details>
 
 ---
 
-## Milestone tracker
+## Repository layout
 
-A phase is done only when all of its exit criteria are met.
+```text
+Turk-OS/
+├── boot/                 Multiboot entry (loader.s), grub.cfg
+├── kernel/
+│   ├── arch/             i386 · riscv32 · aarch64 backends behind include/arch.h
+│   ├── mm/               physical and virtual memory, heap, fault handling
+│   ├── proc/             tasks, scheduler, fork/exec, signals
+│   ├── sync/             spinlocks, mutexes, semaphores, wait queues
+│   ├── fs/               VFS, tarfs, TurkFS, devfs, pipes
+│   ├── drivers/          consoles, keyboard, timer, tty, ATA, block layer, virtio
+│   └── syscall/          system call dispatch and uaccess.c
+├── lib/                  freestanding support library (strings, printf, bitmaps, FDT parser)
+├── include/              kernel headers, including the lock order and the arch interface
+├── user/                 Turk-libc, init, tsh, utilities, negative tests, fuzzer
+├── tests/                host unit tests, fuzz targets, test data
+├── tools/                host-side helpers
+└── docs/                 design documents (LaTeX + PDF), setup guide, security docs, diagrams
+```
 
-- [ ] **P0** — `i686-elf-gcc`, NASM, QEMU and GDB work; repo created; C warm-up library passes its tests.
-- [ ] **P1** — Boot sector prints a message; Multiboot kernel boots via `-kernel` and via a GRUB ISO.
-- [ ] **P2** — Coloured banner on screen, same log on the serial port, `kprintf` and `panic` tested.
-- [ ] **P3** — Own GDT and IDT loaded; divide-by-zero shows a register dump; `int3` returns cleanly.
-- [ ] **P4** — Timer ticks at 100 Hz; keyboard input with shift and caps; monitor commands run.
-- [ ] **P5** — Memory map printed; bitmap and then buddy allocator pass the tests from 16 MiB to 3 GiB of RAM.
-- [ ] **P6** — Kernel runs at `0xC0000000`; null dereference produces a clean page-fault report.
-- [ ] **P7** — 10 000-operation stress test passes through the slab caches; `make test` runs headless.
-- [ ] **P8** — Several kernel threads preempt each other; `sleep` works; no leaks over 1000 task cycles.
-- [ ] **P9** — Race demo fixed by locks; bounded buffer and dining philosophers run without deadlock; lock order checked.
-- [ ] **P10** — Ring-3 program prints through `write`; faulty programs are killed, the kernel survives.
-- [ ] **P11** — `fork`/`exec`/`wait` chain works; copy-on-write verified; no leaks over 1000 forks.
-- [ ] **P12** — QEMU disk identified; data survives reboot; partitions detected; buffer cache in use.
-- [ ] **P13** — Files written by Turk-OS pass `fsck.minix` on the host; file descriptor semantics tested.
-- [ ] **P14** — Boots to the `tsh` prompt; pipes, redirection and Ctrl+C work; coreutils present.
-- [ ] **P15** — One hour of fuzzing without a panic; benchmarks and docs written; v1.0 tagged.
-
-Stage V, toward Turk-OS 2.0:
-
-- [ ] **P16** — Generic code free of x86 (audit in `docs/porting.md`); `make ARCH=i386 test` passes; generic code compiles for riscv32 and aarch64 without warnings; FDT parser passes its host tests.
-- [ ] **P17** — `qemu-system-riscv32 -machine virt` boots to the `tsh` prompt; `make ARCH=riscv32 test` passes; a TurkFS image written on RISC-V passes `fsck.minix`.
-- [ ] **P18** — `qemu-system-aarch64 -machine virt` boots to the `tsh` prompt; `make ARCH=aarch64 test` passes; the same TurkFS image works on all three; v2.0 tagged.
+The tree fills in phase by phase; empty directories hold a `.gitkeep`. All build output goes to `build/` (per
+architecture from `v2.0`) and stays out of Git.
 
 ---
+
+## Contributing
+
+Issues and suggestions are welcome, whether a bug in the code or a mistake in a design document. Please open an
+[issue](https://github.com/hikmethankolay/Turk-OS/issues) before a large change so the design can be discussed
+against the roadmap.
+
+### Coding conventions
+
+<details>
+<summary><b>C, assembly, kernel rules and Git</b></summary>
+
+**C** — `-std=gnu11 -ffreestanding` with `i686-elf-gcc`; kernel flags
+`-O2 -g -Wall -Wextra -Werror -Wformat=2 -Wshadow -Wvla -Wstrict-prototypes -fno-omit-frame-pointer`; link with
+`-nostdlib -lgcc`. Only the freestanding headers; everything else lives in `lib/`. Hardware structures are `packed`
+and size-checked with `_Static_assert`; MMIO goes through `volatile`. On `i686-elf`, `uint32_t` is `unsigned long`,
+so print it with `%lx`/`%lu`. Size arithmetic uses the overflow-checked helpers in `lib/checked.h`.
+
+**Assembly** — NASM, Intel syntax, only where C cannot work (entry, descriptor loads, interrupt stubs, context
+switch, user-mode entry); cdecl, preserving `EBX`, `ESI`, `EDI`, `EBP`. The ports use preprocessed GNU as (`.S`).
+
+**Kernel rules**
+- All user memory is accessed through `uaccess.c`; copy once, then validate the copy; never hold a spinlock across
+  a user copy; zero every structure before copying it out.
+- Every shared structure has a documented lock; locks follow the order in `include/locks.h`.
+- Fallible functions return 0 or a negative `errno`; pointer returns use `ERR_PTR`. User input never causes a panic.
+- Shared objects use saturating `refcount_t`. Interrupt handlers stay short and defer work.
+- Every resource has a limit; every new system call gets a validation entry and fuzzer coverage.
+
+**Git** — small commits that build and boot; LF line endings; build output stays out of Git; every fixed security
+bug gets a regression test; releases are signed tags.
+
+</details>
+
+## Reporting security issues
+
+Please report vulnerabilities privately through GitHub's
+[private vulnerability reporting](https://github.com/hikmethankolay/Turk-OS/security/advisories/new) rather than a
+public issue. Each confirmed issue is fixed together with a regression test.
 
 ## License
 
-Turk-OS is released under the [MIT License](LICENSE), © 2026 Hikmethan KOLAY. That covers the source code and the study plan in `docs/`.
+Turk-OS is released under the [MIT License](LICENSE). Copyright © 2026 Hikmethan KOLAY. The license covers the
+source code and the documentation in `docs/`.

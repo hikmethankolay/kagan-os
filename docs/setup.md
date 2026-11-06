@@ -22,7 +22,7 @@ anything else, the phase document wins.
 5. [Verify the toolchain](#5-verify-the-toolchain)
 6. [Smoke-test QEMU and GDB](#6-smoke-test-qemu-and-gdb)
 7. [Editor setup](#7-editor-setup)
-8. [LaTeX for the study plan (optional)](#8-latex-for-the-study-plan-optional)
+8. [LaTeX for the design documents (optional)](#8-latex-for-the-design-documents-optional)
 9. [Toolchains for the ports (Stage V)](#9-toolchains-for-the-ports-stage-v)
 10. [Troubleshooting](#10-troubleshooting)
 
@@ -55,7 +55,7 @@ Every platform ends up with the same set of tools:
 | Host `gcc`, `make`, `git` | Host unit tests, builds, version control | Phase 0 |
 | `qemu-img` | Creating disk images | Phase 12 |
 | `mkfs.minix`, `fsck.minix` | Creating and checking TurkFS images | Phase 13 |
-| `latexmk` and TeX Live | Rebuilding the study plan PDFs (optional) | any time |
+| `latexmk` and TeX Live | Rebuilding the design-document PDFs (optional) | any time |
 
 > Installing GRUB packages only installs the tools. It doesn't touch your computer's own boot loader; that only
 > happens when someone runs `grub-install`, which this project never does.
@@ -258,7 +258,7 @@ gpg --verify gcc-$GCC_VERSION.tar.xz.sig gcc-$GCC_VERSION.tar.xz
 Each `gpg --verify` must print `Good signature from` followed by a GNU maintainer's name. A warning that the key
 "is not certified with a trusted signature" is normal: it only means you have not signed that key yourself. If you
 see `BAD signature`, or `No public key`, stop: delete the archive and download it again, or import the keyring
-again. Save the output in your lab journal. Only then unpack:
+again. Record the output in the engineering journal. Only then unpack:
 
 ```sh
 tar xf binutils-$BINUTILS_VERSION.tar.xz
@@ -478,7 +478,7 @@ Then run `bear -- make` (or `bear -- gmake` on macOS) once the Makefile exists. 
 
 ---
 
-## 8. LaTeX for the study plan (optional)
+## 8. LaTeX for the design documents (optional)
 
 You only need this to rebuild the PDFs in `docs/pdf/` after changing a `.tex` file. The finished PDFs are already in
 the repository. The style needs `latexmk`, pdfLaTeX and a set of packages
@@ -862,6 +862,6 @@ number of the processor core. After `continue`, the OpenSBI banner appears in th
 | Ubuntu / Debian / WSL2 (Stage V) | `qemu-system-riscv32: command not found` | It isn't part of `qemu-system-x86` | `sudo apt install qemu-system-riscv` (Debian 13, Ubuntu 25.04 and later) or `qemu-system-misc` (older releases) |
 | Ubuntu / Debian / WSL2 (Stage V) | GDB warns that the target description `specified unknown architecture "riscv:rv32"` (or `"aarch64"`) | Plain `gdb` only knows the PC's own architecture | Use `gdb-multiarch` (section 9.4) |
 
-When a problem takes more than an hour, write down the hypothesis in the [lab journal](journal.md) before each
+When a problem takes more than an hour, write down the hypothesis in the [engineering journal](journal.md) before each
 attempt. The OSDev Wiki's [GCC Cross-Compiler](https://wiki.osdev.org/GCC_Cross-Compiler) page lists more known
 problems.

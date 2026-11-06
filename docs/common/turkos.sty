@@ -1,7 +1,7 @@
-% turkos.sty -- shared look and macros for the Turk-OS study-plan documents.
+% turkos.sty -- shared look and macros for the Turk-OS design documents.
 % Every phase document does \usepackage{turkos}; .latexmkrc puts common/ on TEXINPUTS.
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesPackage{turkos}[2026/09/25 Turk-OS study-plan style]
+\ProvidesPackage{turkos}[2026/09/25 Turk-OS design-document style]
 
 % ---------------------------------------------------------------- page, fonts
 \RequirePackage[a4paper,top=2.4cm,bottom=2.4cm,left=2.3cm,right=2.3cm,headheight=15pt]{geometry}
@@ -93,7 +93,7 @@
 \newcommand{\headlabel}{}
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{\sffamily\footnotesize\textcolor{tkGray}{Turk-OS Study Plan}}
+\fancyhead[L]{\sffamily\footnotesize\textcolor{tkGray}{Turk-OS Design Documents}}
 \fancyhead[R]{\sffamily\footnotesize\textcolor{tkGray}{\headlabel}}
 \fancyfoot[C]{\sffamily\footnotesize\textcolor{tkGray}{\thepage}}
 \renewcommand{\headrulewidth}{0.4pt}
@@ -116,16 +116,16 @@
 \newcommand{\RVSPEC}{\tkchip{bkRV}{RISCV}\xspace}
 \newcommand{\ARMDOC}{\tkchip{bkARM}{ARM}\xspace}
 \newcommand{\SPEC}{\tkchip{bkSPEC}{SPEC}\xspace}
-\newcommand{\must}{\tkchip{tkRed}{REQUIRED}\xspace}
-\newcommand{\should}{\tkchip{tkAmber}{RECOMMENDED}\xspace}
+\newcommand{\must}{\tkchip{tkRed}{PRIMARY}\xspace}
+\newcommand{\should}{\tkchip{tkAmber}{SECONDARY}\xspace}
 \newcommand{\could}{\tkchip[tkGray]{tkGray!15}{OPTIONAL}\xspace}
 
 % ---------------------------------------------------------------- title banner
-% \phaseheader{number}{title}{subtitle}{progress from}{progress to}
+% \phaseheader{number}{title}{subtitle}{unused}{unused}
 \newcommand{\phaseheader}[5]{%
   \renewcommand{\phasenum}{#1}\renewcommand{\phasetitle}{#2}%
   \renewcommand{\headlabel}{Phase #1 \textperiodcentered\ #2}%
-  \hypersetup{pdftitle={Turk-OS Phase #1: #2}, pdfauthor={Turk-OS Study Plan}}%
+  \hypersetup{pdftitle={Turk-OS Phase #1: #2}, pdfauthor={Turk-OS}}%
   \thispagestyle{plain}%
   \noindent\begin{tikzpicture}
     \path[use as bounding box] (0,0) rectangle (\linewidth,3.3cm);
@@ -137,7 +137,6 @@
     \node[font=\sffamily\bfseries\LARGE, text=white, anchor=north west, text width=0.74\linewidth, align=left, execute at begin node={\hyphenpenalty=10000\exhyphenpenalty=10000\relax}] at (0.23\linewidth,2.95cm) {#2};
     \node[font=\sffamily\small, text=white!78!tkNavy, anchor=south west, text width=0.74\linewidth, align=left] at (0.23\linewidth,0.35cm) {#3};
   \end{tikzpicture}\par\vspace{0.3em}%
-  \noindent\tkprogress{#4}{#5}\par\vspace{0.2em}%
 }
 
 % \tkprogress{from}{to} -- overall progress bar, this phase highlighted in red.
@@ -158,16 +157,14 @@
   \foreach \s in {1,...,5}{\ifnum\s>#1\relax\textcolor{tkGray!45}{\faStar[regular]}\else\textcolor{tkRed}{\faStar}\fi\,}%
   \enspace\textcolor{tkGray}{\footnotesize(#1/5)}}
 
-% \ataglance{duration}{difficulty 1-5}{prerequisites}{outcome}
+% \ataglance{unused}{unused}{dependencies}{deliverables}
 \newcommand{\ataglance}[4]{%
   \begin{tcolorbox}[enhanced, colback=tkLight, colframe=tkNavy!20, boxrule=0.5pt, arc=2pt,
       left=8pt, right=8pt, top=4pt, bottom=4pt, before skip=6pt, after skip=10pt]
   \small\renewcommand{\arraystretch}{1.3}%
   \begin{tabularx}{\linewidth}{@{}>{\leavevmode\sffamily\bfseries\color{tkNavy}}p{0.21\linewidth} X@{}}
-    \faClock[regular]\enspace Duration & #1 \\
-    \faStar\enspace Difficulty & \tkstars{#2} \\
-    \faTools\enspace You need & #3 \\
-    \faRocket\enspace You will have & #4 \\
+    \faProjectDiagram\enspace Depends on & #3 \\
+    \faCheckSquare\enspace Delivers & #4 \\
   \end{tabularx}
   \end{tcolorbox}}
 
@@ -176,17 +173,17 @@
     top=4pt, bottom=4pt, fonttitle=\sffamily\bfseries\small, before skip=8pt, after skip=8pt}}
 \newtcolorbox{conceptbox}[1]{tkbase, colback=tkBlue!4, colframe=tkBlue!75!black,
   title={\faBookOpen\enspace #1}}
-\newtcolorbox{tipbox}[1][Hint]{tkbase, colback=tkGreen!4, colframe=tkGreen!80!black,
+\newtcolorbox{tipbox}[1][Note]{tkbase, colback=tkGreen!4, colframe=tkGreen!80!black,
   title={\faLightbulb\enspace #1}}
-\newtcolorbox{warnbox}[1][Watch out]{tkbase, colback=tkAmber!6, colframe=tkAmber!90!black,
+\newtcolorbox{warnbox}[1][Caution]{tkbase, colback=tkAmber!6, colframe=tkAmber!90!black,
   title={\faExclamationTriangle\enspace #1}}
-\newtcolorbox{minixbox}[1][Real-system lens: how MINIX 3 does it]{tkbase, colback=bkOSDI!4,
+\newtcolorbox{minixbox}[1][Prior art: MINIX 3]{tkbase, colback=bkOSDI!4,
   colframe=bkOSDI!85!black, title={\faSearch\enspace #1}}
 \newtcolorbox{decisionbox}[1]{tkbase, colback=tkNavy!3, colframe=tkNavy!80,
   title={\faBalanceScale\enspace #1}}
 \newtcolorbox{milestonebox}[1][Exit criteria]{tkbase, colback=tkRed!3, colframe=tkRed!80!black,
-  title={\faFlagCheckered\enspace Milestone: #1}}
-\newtcolorbox{questionbox}[1][Self-check questions]{tkbase, colback=bkMOS!3, colframe=bkMOS!80!black,
+  title={\faFlagCheckered\enspace Exit criteria: #1}}
+\newtcolorbox{questionbox}[1][Review questions]{tkbase, colback=bkMOS!3, colframe=bkMOS!80!black,
   title={\faQuestionCircle\enspace #1}}
 
 % code listing with a file-name title bar:  \begin{lst}{c}{kernel/kmain.c} ... \end{lst}
@@ -290,16 +287,16 @@
 % ---------------------------------------------------------------- tables
 \newcommand{\tkth}[1]{\leavevmode\sffamily\bfseries\footnotesize\color{tkNavy}#1}
 
-% reading plan: \must & \OSTEP & Ch.~6 ... & 49--62 & reason \\
+% references: \must & \OSTEP & Ch.~6 ... & 49--62 & relevance \\
 \newenvironment{readingplan}{%
   \par\small\renewcommand{\arraystretch}{1.35}\setlength{\tabcolsep}{4pt}%
   \begin{longtable}{@{}l l >{\raggedright\arraybackslash}p{0.315\linewidth} >{\raggedleft\arraybackslash}p{0.1\linewidth} >{\raggedright\arraybackslash}p{0.31\linewidth}@{}}
     \toprule
-    \tkth{Priority} & \tkth{Book} & \tkth{What to read} & \tkth{Pages} & \tkth{Why now} \\
+    \tkth{Weight} & \tkth{Source} & \tkth{Section} & \tkth{Pages} & \tkth{Relevance} \\
     \midrule
     \endfirsthead
     \toprule
-    \tkth{Priority} & \tkth{Book} & \tkth{What to read} & \tkth{Pages} & \tkth{Why now} \\
+    \tkth{Weight} & \tkth{Source} & \tkth{Section} & \tkth{Pages} & \tkth{Relevance} \\
     \midrule
     \endhead
     \bottomrule
@@ -311,11 +308,11 @@
   \par\small\renewcommand{\arraystretch}{1.3}\setlength{\tabcolsep}{4pt}%
   \begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.3\linewidth} >{\raggedright\arraybackslash}p{0.33\linewidth} >{\raggedright\arraybackslash}p{0.33\linewidth}@{}}
     \toprule
-    \tkth{Symptom} & \tkth{Likely cause} & \tkth{What to do} \\
+    \tkth{Symptom} & \tkth{Likely cause} & \tkth{Resolution} \\
     \midrule
     \endfirsthead
     \toprule
-    \tkth{Symptom} & \tkth{Likely cause} & \tkth{What to do} \\
+    \tkth{Symptom} & \tkth{Likely cause} & \tkth{Resolution} \\
     \midrule
     \endhead
     \bottomrule
@@ -337,7 +334,7 @@
 
 % ---------------------------------------------------------------- closing blocks
 \newcommand{\booklegend}{%
-  \begin{tcolorbox}[tkbase, unbreakable, colback=white, colframe=tkGray!60, title={\faBookOpen\enspace Books used in this plan}]
+  \begin{tcolorbox}[tkbase, unbreakable, colback=white, colframe=tkGray!60, title={\faBookOpen\enspace References}]
   \footnotesize\renewcommand{\arraystretch}{1.25}%
   \begin{tabularx}{\linewidth}{@{}l X@{}}
   \LOB & Erik Helin, Adam Renberg. \emph{The little book about OS development}, 2015. The hands-on x86 guide. Free at \url{https://littleosbook.github.io}. \\
@@ -348,8 +345,8 @@
   \LKD & Robert Love. \emph{Linux Kernel Development}, 3rd ed., Addison-Wesley, 2010. How Linux implements each subsystem. \\
   \LKP & Kaiwan N.\ Billimoria. \emph{Linux Kernel Programming}, Packt, 2021. Modern kernel practice: logging, allocators, the scheduler, synchronisation. \\
   \end{tabularx}\par\smallskip
-  The books do not come with this plan. \LOB and \OSTEP are free online; buy or borrow the other five (the roadmap lists their ISBNs).
-  Where books disagree, the plan follows the newer one when its method is also better for Turk-OS.
+  \LOB and \OSTEP are freely available; the roadmap lists ISBNs for the others.
+  Where sources disagree, the design follows the newer one when its method also suits Turk-OS.
   Page numbers are the \emph{printed} page numbers of these editions, not PDF page indices. With another edition, or with the free
   \OSTEP chapters (each one starts at page~1), find the reading by its chapter and section numbers.
   MINIX source references like \texttt{kernel/proc.c (07400)} give the file and its starting line in \OSDI Appendix B.
@@ -358,7 +355,7 @@
 % \portlegend -- the references beyond the five books, for the Stage V documents (Phases 16-18).
 % Use it after \booklegend.
 \newcommand{\portlegend}{%
-  \begin{tcolorbox}[tkbase, unbreakable, colback=white, colframe=tkGray!60, title={\faMicrochip\enspace Port references used in Stage V}]
+  \begin{tcolorbox}[tkbase, unbreakable, colback=white, colframe=tkGray!60, title={\faMicrochip\enspace Port references (Stage V)}]
   \footnotesize\renewcommand{\arraystretch}{1.25}%
   \begin{tabularx}{\linewidth}{@{}l X@{}}
   \XVSIX & Russ Cox, Frans Kaashoek, Robert Morris. \emph{xv6: a simple, Unix-like teaching operating system}, RISC-V edition. The companion book to MIT's xv6-riscv kernel. Free at \url{https://pdos.csail.mit.edu/6.1810/}; source at \url{https://github.com/mit-pdos/xv6-riscv}. \\
@@ -366,7 +363,7 @@
   \ARMDOC & \emph{Arm Architecture Reference Manual for A-profile architecture} (DDI~0487), and Arm's \emph{Learn the architecture} guides: AArch64 exception model, AArch64 memory management, Generic Timer, GIC. Free at \url{https://developer.arm.com/documentation}. \\
   \SPEC & \emph{Devicetree Specification} (\url{https://www.devicetree.org/specifications/}); \emph{Virtual I/O Device (VIRTIO)}, OASIS (\url{https://docs.oasis-open.org/virtio/virtio/}); the QEMU documentation for the RISC-V and Arm \code{virt} boards (\url{https://www.qemu.org/docs/master/system/}). \\
   \end{tabularx}\par\smallskip
-  All four are free. Specifications are revised often, so the reading plans cite them by chapter and section title rather than by page.
+  All four are free. Specifications are revised often, so the reference tables cite them by chapter and section title rather than by page.
   \end{tcolorbox}}
 
 % \nextphase{number}{title}

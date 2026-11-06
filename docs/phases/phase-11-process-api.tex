@@ -9,22 +9,22 @@ with copy-on-write, \code{execve} with \code{argc}/\code{argv}, \code{waitpid}, 
 reparenting, \code{getppid}, \code{brk} with lazy allocation, a stack that grows on demand, minimal signals
 (\code{kill}, \code{SIGSEGV}, \code{SIGINT}), and a user-space \code{init} process that starts and reaps other programs.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
 UNIX creates processes in an unusual way, and it turned out to be one of its best ideas. Instead of one call that
 starts a program, there are two. \code{fork} makes an exact copy of the calling process. \code{exec} replaces the
 calling process's program with a new one. The parent then uses \code{wait} to learn when its child has finished.
 \OSTEP chapter 5 explains why the split is so powerful: between \code{fork} and \code{exec}, the child can rearrange
 its own environment (redirect its output to a file, connect a pipe, change directory) without the program it is about
-to run knowing anything about it. Your shell in Phase 14 depends on exactly that.
+to run knowing anything about it. The shell in Phase 14 depends on exactly that.
 
 A naive \code{fork} copies every page of the parent, only for \code{exec} to throw the copy away a moment later. The
-fix is \textbf{copy-on-write} (COW): share the pages and copy each one only when someone writes to it. COW is your
-first use of a page fault as a \emph{feature} rather than an error, and the same idea gives you lazily allocated heaps
+fix is \textbf{copy-on-write} (COW): share the pages and copy each one only when someone writes to it. COW is the kernel's
+first use of a page fault as a \emph{feature} rather than an error, and the same idea yields lazily allocated heaps
 and stacks that grow on demand. After this phase, the page-fault handler is one of the most important functions in
 the kernel.
 
-\section{Concepts you need}
+\section{Background}
 
 \subsection{The four calls and their contracts}
 
@@ -89,18 +89,18 @@ memory runs out, pages can be written to disk and brought back by a fault (swapp
 policy such as the clock algorithm. Turk-OS uses faults for three things in this phase. \textbf{COW}: a write to a
 present page marked COW. \textbf{Lazy heap}: \code{brk} only moves the heap's end, and a fault inside the heap maps a
 zeroed page. \textbf{Stack growth}: a fault just below the stack maps a new page, up to a limit. Anything else from
-user mode is a real error and ends the process with \code{SIGSEGV}. Swapping is a stretch goal once you have a disk.
+user mode is a real error and ends the process with \code{SIGSEGV}. Swapping is an extension once a disk driver exists (Phase 12).
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
-\must & \OSTEP & Ch.~5 \emph{Interlude: Process API} (\code{fork}, \code{wait}, \code{exec}, why the split, redirection). Do its homework on Linux first & 37--48 & The exact semantics you must reproduce. \\
+\must & \OSTEP & Ch.~5 \emph{Interlude: Process API} (\code{fork}, \code{wait}, \code{exec}, why the split, redirection); its exercises run on Linux & 37--48 & The exact semantics Turk-OS reproduces. \\
 \must & \OSDI & \S4.7 \emph{Overview of the MINIX 3 Process Manager}: memory layout, \code{fork}/\code{exit}/\code{wait} (\S4.7.4), \code{exec} (\S4.7.5), \code{brk} (\S4.7.6), signals (\S4.7.7) & 420--447 & A complete UNIX process model, explained step by step. \\
 \must & \OSDI & \S4.8.3--4.8.6 \emph{Implementation of fork, exit, wait, exec, brk, signal handling} & 455--471 & The real code for the same calls. \\
 \must & \OSC & \S10.2 \emph{Demand Paging}; \S10.3 \emph{Copy-on-Write} & 392--401 & Page faults as the mechanism behind COW and lazy allocation. \\
 \should & \OSC & \S3.3 \emph{Operations on Processes} & 116--123 & Creation, termination, zombies and orphans. \\
 \should & \MOS & \S3.6 \emph{Implementation Issues} (page fault handling, instruction backup, locking pages, backing store) & 233--240 & What a page-fault handler really has to deal with. \\
-\should & \OSTEP & Ch.~21--22 \emph{Beyond Physical Memory: Mechanisms}, \emph{Policies} & 227--254 & Swapping and replacement policies, for the stretch goal. \\
+\should & \OSTEP & Ch.~21--22 \emph{Beyond Physical Memory: Mechanisms}, \emph{Policies} & 227--254 & Swapping and replacement policies, for the swapping extension. \\
 \could & \MOS & \S3.4 \emph{Page Replacement Algorithms} & 209--222 & Optimal, NRU, FIFO, second chance, clock, LRU, working set. \\
 \could & \MOS & \S10.3 \emph{Processes in Linux} & 733--753 & \code{fork}, \code{clone} and \code{exec} in a production kernel. \\
 \should & \LKD & Ch.~3, \emph{Process Creation}, \emph{The Linux Implementation of Threads}, \emph{Process Termination} & 31--40 & Copy-on-write, \code{fork} and zombies as Linux does them. \\
@@ -111,14 +111,14 @@ user mode is a real error and ends the process with \code{SIGSEGV}. Swapping is 
 The MINIX process manager is a user-space server, and its handlers read almost like pseudo-code:
 \code{do_fork}, \code{do_pm_exit} and \code{do_waitpid} in \texttt{servers/pm/forkexit.c (18400)}, \code{do_exec} in
 \texttt{servers/pm/exec.c (18700)}, \code{do_brk} in \texttt{servers/pm/break.c (19300)}, and signal handling in
-\texttt{servers/pm/signal.c (19500)}. Notice how \code{exec} builds the new stack with the argument strings and then
-patches the pointers in it: you will do the same in Task~11.6. One difference is fundamental: MINIX 3 has no paging,
-so its \code{fork} must copy the child's whole data segment immediately. With paging you can share and copy lazily.
+\texttt{servers/pm/signal.c (19500)}. \code{exec} builds the new stack with the argument strings and then
+patches the pointers in it, as Task~11.6 does. One difference is fundamental: MINIX 3 has no paging,
+so its \code{fork} must copy the child's whole data segment immediately. With paging, pages can be shared and copied lazily.
 
 \par\smallskip\textbf{Linux, for comparison.} \LKD In Linux, \code{fork} is one case of \code{clone}: copy-on-write makes it cheap, and a thread is simply a task that shares its address space, files and signal handlers with its parent.
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{Processes, parents and the trap frame}
 Extend \code{struct task} with \code{ppid}, a list of children, \code{exit_code}, a wait queue for ``one of my children
@@ -185,9 +185,9 @@ static void setup_child_stack(struct task *child, const struct regs *parent_tf)
 value, and \code{fork} returns the child's PID in the parent.}
 
 \task{Copy-on-write}
-Replace the copying loop. For every present user PTE in the parent: if it is writable, clear R/W and set your
+Replace the copying loop. For every present user PTE in the parent: if it is writable, clear R/W and set the
 \code{PG_COW} bit (\code{0x200}) in the parent's PTE; copy the PTE into the child; call \code{pmm_ref} on the frame.
-When the loop is done, reload CR3 in the parent: you changed many of its live mappings, and its TLB still holds the
+When the loop is done, reload CR3 in the parent: many of its live mappings changed, and its TLB still holds the
 old writable ones. Then write the routine that breaks the sharing for one page. It returns an error instead of
 killing anyone, because the caller decides what a failure means: for a write from user mode it means
 \code{SIGKILL}, but Task~11.7 also calls it on behalf of \code{copy_to_user}, where the right answer is
@@ -240,7 +240,7 @@ looks for a zombie child that matches (\code{pid == -1} means any): if it finds 
 starting values. A child whose parent exits first is reaped by \code{init}.}
 
 \task{execve with arguments}
-The arguments live in the old address space, which you are about to throw away, so copy the path and the
+The arguments live in the old address space, which is about to be discarded, so copy the path and the
 \code{argv}/\code{envp} strings into kernel buffers first (with size limits). Build a complete new address space and
 load the ELF into it. Only when everything has succeeded, switch to it, free the old one, and edit the trap frame:
 EIP is the new entry point, the user ESP is the new stack pointer. That way a failed \code{exec} returns an error to a
@@ -332,7 +332,7 @@ Phase 14 formalises this with the terminal driver.
 Check the arguments before touching the bitmask. \code{sys_kill} returns \code{-EINVAL} for a signal outside 1--31,
 because \code{1u << sig} past the width of the mask is undefined behaviour, and \code{-EPERM} for \code{SIGKILL} or
 \code{SIGTERM} sent to PID 1: without \code{init}, nobody reaps orphans. One rule holds for any code that later
-restores user registers from user memory, such as the \code{sigreturn} of the Going-further section: the kernel always
+restores user registers from user memory, such as the \code{sigreturn} of the Extensions section: the kernel always
 sets CS and SS itself and keeps the privileged EFLAGS bits (IOPL, VM, NT) at its own values. They are never copied
 from user memory, or a process could return to ring 0 or give itself I/O ports.
 \verify{\code{kill(1, SIGKILL)} returns \code{-EPERM}, \code{kill(p, 99)} returns \code{-EINVAL}, and
@@ -386,7 +386,7 @@ Zombies pile up & Nobody waits: the shell or init doesn't reap & init loops on \
 A failed \code{exec} leaves a broken process & The old address space was freed before the load succeeded & Build first, swap last. \\
 \end{pitfalls}
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[The UNIX process model]
 \begin{checklist}
@@ -404,7 +404,7 @@ A failed \code{exec} leaves a broken process & The old address space was freed b
 \begin{questionbox}
 \begin{enumerate}
   \item Why does UNIX separate \code{fork} and \code{exec}? Give an example the split makes easy.
-  \item How does one call to \code{fork} return two different values? Point to the line in your kernel that does it.
+  \item How does one call to \code{fork} return two different values? Which line in the kernel does it?
   \item Walk through copy-on-write for one page, including every TLB flush and reference count change.
   \item What is a zombie, what is an orphan, and who cleans each up?
   \item Why must \code{execve} copy its arguments into the kernel before building the new address space?
@@ -413,9 +413,9 @@ A failed \code{exec} leaves a broken process & The old address space was freed b
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 
-Once Phase 12 gives you a disk, add swapping: when the PMM runs low, pick a victim page with the clock algorithm
+Once Phase 12 provides a disk, add swapping: when the PMM runs low, pick a victim page with the clock algorithm
 (\OSTEP chapter 22, \MOS\,\S3.4.5), write it to a swap partition, mark the PTE not present with the disk slot in the
 free bits, and read it back on the next fault. Add user-level signal handlers with \code{sigaction} and a
 \code{sigreturn} trampoline on the user stack, following the context-restore rule of Task~11.8. Or implement threads inside a process with a \code{clone}-style call

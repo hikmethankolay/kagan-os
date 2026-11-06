@@ -2,14 +2,14 @@
 \usepackage{turkos}
 
 \begin{document}
-\phaseheader{5}{Physical Memory Management}{Find out which RAM really exists, and hand it out and take it back in 4 KiB page frames}{28}{34}
+\phaseheader{5}{Physical Memory Management}{Determine which RAM really exists, and hand it out and take it back in 4 KiB page frames}{28}{34}
 
 \ataglance{2 weeks}{3}{Phase 4: working interrupts, timer, keyboard monitor}{A parser for the Multiboot memory map,
 linker symbols that mark the kernel's start and end, a bitmap page-frame allocator with \code{pmm_alloc_frame},
 \code{pmm_free_frame} and contiguous allocation, then a buddy allocator behind the same interface, a \code{mem} command with real numbers, and the first in-kernel
 test suite.}
 
-\section{Why this phase}
+\section{Scope and motivation}
 
 Every later subsystem needs memory: page tables (Phase 6), the kernel heap (Phase 7), process stacks (Phase 8), user
 address spaces (Phase 10), the buffer cache (Phase 12). All of it ultimately comes from one place, the
@@ -19,23 +19,23 @@ time.
 The PMM has to answer a harder question first: which memory can it hand out at all? Physical addresses are not a
 clean array of RAM. The first megabyte is full of BIOS data and video memory, the kernel image sits at 1\,MiB,
 GRUB's structures and boot modules are scattered above it, and there are holes near the top of the 32-bit space for
-devices and firmware tables. Hand out the wrong frame and you will overwrite the kernel, or a device, and the crash
-will come much later somewhere unrelated. This phase is about getting that bookkeeping exactly right. It is also
-where you start writing \textbf{automated tests}, because a memory allocator that is ``mostly right'' is wrong.
+devices and firmware tables. Handing out the wrong frame overwrites the kernel, or a device, and the crash
+comes much later somewhere unrelated. This phase is about getting that bookkeeping exactly right. It is also
+where the kernel gains \textbf{automated tests}, because a memory allocator that is ``mostly right'' is wrong.
 
-\section{Concepts you need}
+\section{Background}
 
 \subsection{Address spaces and why the kernel needs an allocator}
 
 \OSTEP chapter 13 introduces the \textbf{address space}, the memory a program believes it has, and explains why the
 OS must virtualise memory: isolation, protection, and the convenience of every program seeing memory starting at
-zero. You will build that illusion in Phases 6 and 10. Underneath it, the OS still manages real memory in fixed-size
+zero. Turk-OS builds that illusion in Phases 6 and 10. Underneath it, the OS still manages real memory in fixed-size
 units called \textbf{page frames}. On x86 a frame is 4\,KiB, and frame number $n$ covers physical addresses
 $n \times 4096$ to $n \times 4096 + 4095$. Frame number and address convert with a shift by 12: \code{frame = addr >> 12}.
 
 \subsection{The Multiboot memory map}
 
-Because you set bit 1 of the Multiboot flags in Phase 2, GRUB passes a \textbf{memory map} (\code{mmap_addr},
+Because the loader sets bit 1 of the Multiboot flags (Phase 2), GRUB passes a \textbf{memory map} (\code{mmap_addr},
 \code{mmap_length} in the Multiboot information, valid when bit 6 of \code{flags} is set). It is the BIOS E820 map in
 a friendlier wrapper: a list of regions, each with a 64-bit base address, a 64-bit length and a type. Only type 1 is
 usable RAM; everything else (reserved, ACPI tables, bad memory) must never be allocated. Figure~\ref{fig:physmap}
@@ -90,15 +90,15 @@ Detect double free & trivial: the bit is already 0 & needs extra bookkeeping \\
 \end{center}
 
 Turk-OS starts with a bitmap: it makes bugs visible, supports the contiguous allocations that DMA needs in Phase 12,
-and reuses your Phase 0 bitmap code. You can add a free-list cache in front of it later if profiling says so.
+and reuses the Phase 0 bitmap code. A free-list cache can go in front of it later if profiling justifies one.
 
-\section{Reading plan}
+\section{References}
 
 \begin{readingplan}
 \must & \LOB & Ch.~10 \emph{Page Frame Allocation}: how much memory is there, managing available memory & 61--63 & Tasks 5.1--5.3. \\
 \must & \OSTEP & Ch.~13 \emph{The Abstraction: Address Spaces} & 113--122 & The goals that all of memory management serves. \\
-\must & \OSTEP & Ch.~17 \emph{Free-Space Management} & 161--178 & Bitmaps, free lists, splitting, coalescing; you will reuse this in Phase 7. \\
-\should & \OSTEP & Ch.~14 \emph{Interlude: Memory API} & 123--134 & The bugs allocator users make, so your tests look for them. \\
+\must & \OSTEP & Ch.~17 \emph{Free-Space Management} & 161--178 & Bitmaps, free lists, splitting, coalescing; reused in Phase 7. \\
+\should & \OSTEP & Ch.~14 \emph{Interlude: Memory API} & 123--134 & The bugs allocator users make, and therefore what the tests look for. \\
 \should & \MOS & \S3.1 \emph{No Memory Abstraction}; \S3.2 \emph{Address Spaces} (esp.\ \S3.2.3 \emph{Managing Free Memory}) & 182--194 & Bitmaps versus linked lists with worked examples. \\
 \should & \OSDI & \S4.1--4.2 \emph{Basic Memory Management}, \emph{Swapping} (bitmaps, linked lists) & 374--383 & The same ideas, with the MINIX perspective. \\
 \could & \OSC & \S9.1--9.2 \emph{Background}; \emph{Contiguous Memory Allocation} & 349--360 & Fragmentation, first/best/worst fit. \\
@@ -114,10 +114,10 @@ the file that implements it, \texttt{servers/pm/alloc.c}, is described there but
 paging instead, so it only ever needs single 4\,KiB frames, apart from the occasional contiguous DMA buffer. The
 comparison shows why paging won: no external fragmentation, and no need to move processes around.
 
-\par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux manages physical memory with a \textbf{buddy allocator}: per zone, free lists of blocks of $2^{\mathit{order}}$ pages that are split on allocation and merged with their buddy on free. A bitmap is simpler, which is why you write it first, but the buddy allocator finds contiguous blocks without a scan (Task~5.7).
+\par\smallskip\textbf{Linux, for comparison.} \LKD\ \LKP Linux manages physical memory with a \textbf{buddy allocator}: per zone, free lists of blocks of $2^{\mathit{order}}$ pages that are split on allocation and merged with their buddy on free. A bitmap is simpler, which is why Turk-OS builds it first, but the buddy allocator finds contiguous blocks without a scan (Task~5.7).
 \end{minixbox}
 
-\section{Build it}
+\section{Implementation}
 
 \task{Walk the memory map}
 Extend \code{multiboot.h} with the memory map entry and print the map at boot. The one trap: each entry starts with a
@@ -145,12 +145,12 @@ void print_memory_map(const struct multiboot_info *mbi)
     }
 }
 \end{lst}
-\verify{With \code{-m 128}, you see a usable region from 0 to about 640\,KiB, reserved regions around the BIOS area,
+\verify{With \code{-m 128}, the map shows a usable region from 0 to about 640\,KiB, reserved regions around the BIOS area,
 and a large usable region from 1\,MiB to just under 128\,MiB.}
 
 \task{Know where the kernel ends}
 The linker can define symbols at any point in the layout. Add \code{kernel_start} and \code{kernel_end} to
-\code{link.ld}; in C, declare them as arrays so you use their \emph{address}, never their contents.
+\code{link.ld}; in C, declare them as arrays so only their \emph{address} is used, never their contents.
 
 \begin{lst}{plain}{link.ld (changes)}
 SECTIONS
@@ -216,11 +216,11 @@ void pmm_free_frame(uintptr_t paddr)
 \end{lst}
 Steps three and four deserve their own function, because the memory map is input the kernel did not write. Firmware
 tables have bugs, and nothing stops an entry from claiming the kernel image is free RAM. In fact GRUB's map always
-does: the kernel sits inside the large usable region above 1\,MiB. So treat every entry with suspicion. Skip an
+does: the kernel sits inside the large usable region above 1\,MiB. Every entry is therefore treated as untrusted. Skip an
 entry whose \code{size} is too small to hold the fields, an empty one, and
 one whose \code{base + length} wraps past $2^{64}$. Clip the rest to the frames the bitmap covers, at most 4\,GiB.
 Then reserve the kernel image, the bitmap, the Multiboot structures and the low 1\,MiB again, whatever the map said
-about them. Because the function writes into a bitmap you pass in, a test can run it on a made-up map without
+about them. Because the function writes into a caller-supplied bitmap, a test can run it on a made-up map without
 touching the real allocator.
 
 \begin{lst}{c}{kernel/mm/pmm.c (applying the memory map)}
@@ -267,9 +267,9 @@ Write \code{KTEST(name)} and \code{KASSERT(cond)} macros and a \code{test} monit
 registered test and prints \code{PASS} or \code{FAIL} with the failing line. A simple way to register tests is an
 array of \code{{name, function}} pairs in \code{tests/tests.c}; a neater way is to put a pointer to each test in a
 dedicated linker section and walk it from \code{__start_ktests} to \code{__stop_ktests}. Phase 7 connects this to
-\code{make test} so it runs without you.
+\code{make test} so it runs unattended.
 
-\task{Test the allocator hard}
+\task{Test the allocator thoroughly}
 Write at least these tests. Each one should leave the free count exactly where it found it.
 
 \begin{center}
@@ -293,7 +293,7 @@ memory hole below 4\,GiB, so it exercises the memory map handling.}
 
 \task{A real mem command}
 Update the monitor's \code{mem} command to print the memory map, the kernel's size, and total, used and free
-memory in MiB. You will watch these numbers constantly in later phases to spot leaks.
+memory in MiB. Later phases rely on these numbers to spot leaks.
 
 \task{A buddy allocator behind the same interface}
 The bitmap is easy to get right, but \code{pmm_alloc_frames(n)} has to scan for a free run, and freed runs never
@@ -303,7 +303,7 @@ order $k$, take a block from list $k$, or split a larger one in halves until it 
 the lower lists. To free a block, look at its \textbf{buddy}, the other half of the block it was split from, whose
 address differs in exactly one bit; if the buddy is free too, merge them and repeat one order higher.
 
-Now that the bitmap version passes all its tests, replace its inside, not its interface: keep \code{pmm.h}, and make
+Once the bitmap version passes all its tests, replace its inside, not its interface: keep \code{pmm.h}, and make
 \code{pmm_alloc_frames(n)} round up to the next order. Keep one byte per frame for its state (free or not, and the order
 of the block it heads); the free lists can be the intrusive lists of Phase~0, threaded through the free frames
 themselves once paging maps them, or plain arrays of frame numbers until then.
@@ -329,29 +329,29 @@ void buddy_free(size_t frame, unsigned order)
     list_add_block(frame, order);
 }
 \end{lst}
-\verify{The whole Task~5.5 suite passes unchanged on the buddy allocator. Freeing every frame you allocated leaves the
-free lists exactly as \code{pmm_init} built them, which you can check by printing the number of blocks per order (as
+\verify{The whole Task~5.5 suite passes unchanged on the buddy allocator. Freeing every allocated frame leaves the
+free lists exactly as \code{pmm_init} built them, which is checked by printing the number of blocks per order (as
 Linux's \code{/proc/buddyinfo} does). Allocating 64 contiguous frames no longer takes time proportional to memory size.}
 
 \section{Testing and debugging}
 
 \begin{pitfalls}
 The memory map loop runs forever or prints garbage & Advanced by \code{sizeof(struct mmap_entry)} instead of \code{size + 4}, or struct not packed & Use the \code{size} field; check \code{sizeof} is 24. \\
-Wrong totals on machines with more than 4\,GiB & Base and length are 64-bit and were truncated & Keep them \code{uint64_t}; clamp regions to the 4\,GiB you can address. \\
+Wrong totals on machines with more than 4\,GiB & Base and length are 64-bit and were truncated & Keep them \code{uint64_t}; clamp regions to the addressable 4\,GiB. \\
 Crash long after boot, in code unrelated to the PMM & A frame inside the kernel, the bitmap, or the Multiboot data was handed out and overwritten & Run the \code{never_kernel} test; re-reserve those regions after freeing type-1 memory. \\
 Off-by-one: last frame never allocated, or one frame past the end & Region end rounded the wrong way, or \code{<=} instead of \code{<} & Round the start up and the end down; write a test for a region ending exactly on a frame boundary. \\
 Allocation gets slow as memory fills & Scanning from frame 0 every time & Keep a \code{next_hint}; later, scan 32 frames at a time by comparing whole words with \code{0xFFFFFFFF}. \\
 \end{pitfalls}
 
 \begin{warnbox}[Prepare for Phase 6]
-Right now physical address equals the address your code uses, so the PMM can read and write its bitmap directly.
+Until paging is enabled, the physical address equals the address the code uses, so the PMM can read and write its bitmap directly.
 Once paging is on and the kernel moves to \code{0xC0000000}, that stops being true: the bitmap has a physical address
 and a different virtual one, and a frame returned by \code{pmm_alloc_frame} can't be touched until it is mapped.
 Keep all address arithmetic in the PMM explicit about which kind of address it is, for example by using a
 \code{typedef uintptr_t paddr_t} for physical addresses.
 \end{warnbox}
 
-\section{Milestone}
+\section{Exit criteria}
 
 \begin{milestonebox}[The kernel knows its memory]
 \begin{checklist}
@@ -367,19 +367,19 @@ Keep all address arithmetic in the PMM explicit about which kind of address it i
 
 \begin{questionbox}
 \begin{enumerate}
-  \item Why can't you assume that all memory from 1\,MiB to \code{mem_upper} is free?
+  \item Why is it unsafe to assume that all memory from 1\,MiB to \code{mem_upper} is free?
   \item How big is a bitmap for 4\,GiB of RAM with 4\,KiB frames? For 128\,MiB?
   \item Why start by marking every frame as used, rather than every frame as free?
   \item Why are \code{kernel_start} and \code{kernel_end} declared as arrays in C?
   \item What is the difference between internal and external fragmentation? Which one can a page-frame allocator suffer from?
-  \item What would you need to change to make \code{pmm_alloc_frame} O(1)?
+  \item What change would make \code{pmm_alloc_frame} O(1)?
 \end{enumerate}
 \end{questionbox}
 
-\section{Going further}
+\section{Extensions}
 
-Compare your bitmap and buddy allocators with a benchmark of many small and large allocations, and read
-\OSC\,\S10.8.1 and \OSTEP\,\S17.4 for the textbook view of the buddy system. Split memory into zones, for example frames below 16\,MiB for old DMA devices and the rest for
+Benchmark the bitmap and buddy allocators with many small and large allocations; \OSC\,\S10.8.1 and
+\OSTEP\,\S17.4 give the textbook view of the buddy system. Split memory into zones, for example frames below 16\,MiB for old DMA devices and the rest for
 everything else, as Linux does. Or add a small per-CPU cache of free frames in front of the bitmap, which is the
 standard way to make the common case O(1).
 
