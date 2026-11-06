@@ -1,0 +1,7 @@
+i686-elf-gcc (GCC) 16.2.0
+GNU ld (GNU Binutils) 2.47.20260726
+NASM version 3.02 compiled on Jul 14 2026
+QEMU emulator version 10.2.2 (qemu-10.2.2-1.fc44)
+grub2-mkrescue (GRUB) 2.12
+riscv32-elf-gcc (GCC) 16.2.0
+aarch64-elf-gcc (GCC) 16.2.0
